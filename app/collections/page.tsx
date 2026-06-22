@@ -21,7 +21,7 @@ export default function CollectionsPage() {
   useEffect(() => { (async () => {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData.user) { window.location.href = "/auth"; return; }
-    const { data } = await supabase.from("collections").select("*, cards ( id, card_images ( image_url, image_type ) )").eq("owner_id", userData.user.id).order("created_at", { ascending: false });
+    const { data } = await supabase.from("collections").select("*, cards ( id, player_name, display_image_url, front_image_url, back_image_url, card_images ( image_url, image_type ) )").eq("owner_id", userData.user.id).order("created_at", { ascending: false });
     setCollections((data || []) as CollectionSummary[]); setLoading(false);
   })(); }, []);
 
@@ -44,4 +44,3 @@ export default function CollectionsPage() {
     {filtered.length ? <section className="mt-7 grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">{filtered.map((collection, index) => <CollectionTile key={collection.id} collection={collection} index={index}/>)}</section> : <section className="mt-7"><EmptyState title="No collections found" description="Adjust the filters or create a new collection for the archive." action={<ButtonLink href="/collections/new">Create collection</ButtonLink>}/></section>}
   </main>;
 }
-

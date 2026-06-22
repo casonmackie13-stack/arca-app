@@ -42,6 +42,11 @@ export function validateRequiredCardImage(imageFile?: File | null) {
   return "";
 }
 
+export function validateOptionalCardImage(imageFile?: File | null) {
+  if (imageFile && (!imageFile.type.startsWith("image/") || imageFile.size > 10 * 1024 * 1024)) return "Choose an image file no larger than 10 MB.";
+  return "";
+}
+
 export function validateCardIdentity(value: CardFormValue) {
   if (!value.playerName.trim()) return "Player or subject name is required.";
   if (value.year.trim() && !/^\d+$/.test(value.year.trim())) return "Year must be a positive whole number.";

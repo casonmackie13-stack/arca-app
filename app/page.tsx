@@ -30,7 +30,7 @@ export default function Home() {
       ]);
 
       const [{ data: collectionData }, { data: cardData }] = await Promise.all([
-        supabase.from("collections").select("*, cards ( id, card_images ( image_url, image_type ) )").eq("owner_id", user.id).order("created_at", { ascending: true }),
+        supabase.from("collections").select("*, cards ( id, player_name, display_image_url, front_image_url, back_image_url, card_images ( image_url, image_type ) )").eq("owner_id", user.id).order("created_at", { ascending: true }),
         supabase.from("cards").select("*, card_images ( image_url, image_type )").eq("owner_id", user.id).order("created_at", { ascending: false }),
       ]);
       setProfile(profileData as CollectorProfile | null);

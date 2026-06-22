@@ -261,6 +261,40 @@ a {
   }
 }
 
+.flippable-card-stage {
+  height: 100%;
+  perspective: 1200px;
+  width: 100%;
+}
+
+.flippable-card-inner {
+  height: 100%;
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 520ms cubic-bezier(.2,.75,.25,1);
+  width: 100%;
+}
+
+.flippable-card-stage.is-flipped .flippable-card-inner {
+  transform: rotateY(180deg);
+}
+
+.flippable-card-face {
+  backface-visibility: hidden;
+  background: #050505;
+  border: 1px solid var(--border-subtle);
+  border-radius: 1rem;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .28);
+  inset: 0;
+  overflow: hidden;
+  position: absolute;
+  -webkit-backface-visibility: hidden;
+}
+
+.flippable-card-back {
+  transform: rotateY(180deg);
+}
+
 @media (min-width: 768px) {
   .page-container {
     padding: 3rem 2rem 6rem;

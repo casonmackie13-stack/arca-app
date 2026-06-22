@@ -39,6 +39,10 @@ export type CardSummary = {
   status?: string | null;
   notes?: string | null;
   original_image_url?: string | null;
+  front_image_url?: string | null;
+  back_image_url?: string | null;
+  original_front_image_url?: string | null;
+  original_back_image_url?: string | null;
   display_image_url?: string | null;
   image_source?: string | null;
   image_source_url?: string | null;
@@ -56,7 +60,7 @@ export type CollectionSummary = {
   description?: string | null;
   cover_image_url?: string | null;
   created_at?: string;
-  cards?: CardSummary[] | { id?: string; card_images?: CardImage[] }[];
+  cards?: CardSummary[] | { id?: string; display_image_url?: string | null; front_image_url?: string | null; back_image_url?: string | null; card_images?: CardImage[] }[];
 };
 
 export type CollectorProfile = {

@@ -10,7 +10,8 @@ import { Badge, EmptyState, LoadingState, Message, Panel } from "@/components/ui
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
 import { PageHeader } from "@/components/ui/PageHeader";
-import ArcaImage from "@/components/ui/ArcaImage";
+import FlippableCard from "@/components/card/FlippableCard";
+import { cardBackImage, cardFrontImage, cardImageStoragePath } from "@/lib/card-images";
 
 export default function CardDetailPage() {
   const cardId = useParams().id as string;
@@ -75,20 +76,27 @@ export default function CardDetailPage() {
 
   const deleteCard = useCallback(async () => {
     if (!card) return; setDeleting(true); setMessage("");
+    const storagePaths = Array.from(new Set([card.original_front_image_url, card.original_back_image_url, card.original_image_url, ...(card.card_images || []).map((image) => image.image_url)].map(cardImageStoragePath).filter((path): path is string => Boolean(path))));
     const { error: imageError } = await supabase.from("card_images").delete().eq("card_id", card.id);
     if (imageError) { setMessageTone("error"); setMessage(imageError.message); setDeleting(false); setConfirmOpen(false); return; }
     const { error } = await supabase.from("cards").delete().eq("id", card.id);
-    if (error) { setMessageTone("error"); setMessage(error.message); setDeleting(false); setConfirmOpen(false); return; }
+    if (error) {
+      if (card.card_images?.length) await supabase.from("card_images").insert(card.card_images.map((image) => ({ id: image.id, card_id: card.id, image_url: image.image_url, image_type: image.image_type })));
+      setMessageTone("error"); setMessage(error.message); setDeleting(false); setConfirmOpen(false); return;
+    }
+    if (storagePaths.length) await supabase.storage.from("card_images").remove(storagePaths);
     router.push(card.collection_id ? `/collections/${card.collection_id}` : "/collections");
   }, [card, router]);
 
   if (loading) return <main className="page-container"><LoadingState label="Retrieving the card record…"/></main>;
   if (!card) return <main className="page-container"><EmptyState title="Card unavailable" description="This card could not be found in the archive."/></main>;
   const status = card.status?.replaceAll("_", " ") || "Unclassified";
+  const frontImage = cardFrontImage(card);
+  const backImage = cardBackImage(card);
   return <main className="page-container cinematic-enter"><div className="detail-container">
     <PageHeader backHref={card.collection_id ? `/collections/${card.collection_id}` : "/collections"} backLabel="Collection" action={isOwner ? <ButtonLink href={`/cards/${card.id}/edit`} variant="secondary" size="sm">Edit card</ButtonLink> : undefined}/>
     <div className="grid gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(320px,.95fr)] lg:gap-14">
-      <section className="panel relative flex min-h-[28rem] items-center justify-center overflow-hidden bg-black p-5 md:min-h-[38rem] md:p-8">{card.card_images?.[0]?.image_url ? <ArcaImage src={card.card_images[0].image_url} alt={card.player_name} className="image-reveal object-contain p-5 md:p-8"/> : <span className="eyebrow text-[var(--text-tertiary)]">Image unavailable</span>}</section>
+      <section className="panel relative flex min-h-[28rem] items-center justify-center overflow-hidden bg-black p-5 md:min-h-[38rem] md:p-8">{frontImage ? <FlippableCard frontImageUrl={frontImage} backImageUrl={backImage} alt={card.player_name} className="max-w-md"/> : <span className="eyebrow text-[var(--text-tertiary)]">Image unavailable</span>}</section>
       <section><p className="eyebrow">Card record</p><h1 className="display-l mt-3">{card.player_name}</h1><p className="mt-4 text-base text-[var(--text-secondary)]">{card.year} {card.brand}</p><p className="mt-1 text-sm text-[var(--text-tertiary)]">{card.set_name} {card.card_number ? `#${card.card_number}` : ""}</p><div className="mt-6"><Badge tone="gold">{status}</Badge></div>
         <Panel variant="featured" className="mt-9 p-6"><p className="eyebrow">Certification</p><div className="mt-5 flex items-end justify-between"><div><p className="text-sm text-[var(--text-secondary)]">{card.grader || "Ungraded"}</p><p className="font-display text-6xl leading-none">{card.grade || "Raw"}</p></div><div className="text-right"><p className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-tertiary)]">Estimated value</p><p className="mt-2 text-xl font-semibold tabular-nums">{card.estimated_value ? `$${Number(card.estimated_value).toLocaleString()}` : "Not set"}</p></div></div></Panel>
         <div className="mt-8 border-t border-[var(--border-subtle)] pt-7"><p className="eyebrow">Curator notes</p><p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-[var(--text-secondary)]">{card.notes || "No notes have been recorded."}</p></div>

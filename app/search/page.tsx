@@ -18,6 +18,7 @@ const cardFields = `
   id, collection_id, player_name, sport, year, brand, set_name, card_number,
   team, parallel, rookie_card, serial_number, condition,
   grader, grade, estimated_value, status, notes, created_at,
+  front_image_url, back_image_url, display_image_url,
   card_images ( image_url, image_type ),
   collection:collections ( id, name )
 `;

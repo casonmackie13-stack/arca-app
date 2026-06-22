@@ -1,12 +1,13 @@
 import Link from "next/link";
-import type { CollectionSummary } from "@/lib/types";
+import type { CardSummary, CollectionSummary } from "@/lib/types";
 import { ArrowRightIcon, VaultIcon } from "@/components/ui/Icons";
 import { Badge } from "@/components/ui/Surface";
 import ArcaImage from "@/components/ui/ArcaImage";
+import { cardFrontImage } from "@/lib/card-images";
 
 export default function CollectionTile({ collection, index = 0 }: { collection: CollectionSummary; index?: number }) {
   const count = collection.cards?.length || 0;
-  const fallbackImage = collection.cards?.find((card) => card.card_images?.length)?.card_images?.[0]?.image_url;
+  const fallbackImage = collection.cards?.map((card) => cardFrontImage(card as CardSummary)).find(Boolean);
   const image = collection.cover_image_url || fallbackImage;
   return <Link href={`/collections/${collection.id}`} className="panel interactive-card cinematic-enter group block overflow-hidden" style={{ animationDelay: `${Math.min(index, 8) * 55}ms` }}>
     <div className="relative aspect-[16/10] overflow-hidden bg-[var(--surface-elevated)]">
