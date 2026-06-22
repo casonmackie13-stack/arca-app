@@ -1,7 +1,9 @@
 import type { ScanType } from "@/components/scanner/scanTypes";
 import { scanTypeConfig } from "@/components/scanner/scanTypes";
+import type { Point } from "@/lib/image-processing/cardBoundaryScanner";
+import type { OpenCvRuntime } from "@/lib/image-processing/opencvLoader";
 
-export type CaptureMethod = "fixed-overlay-crop" | "full-frame-fallback";
+export type CaptureMethod = "perspective" | "fixed-overlay-crop" | "full-frame-fallback";
 
 export type CorrectedCapture = {
   file: File;
@@ -58,6 +60,59 @@ function canvasToFile(canvas: HTMLCanvasElement, scanType: ScanType, method: Cap
       resolve(new File([blob], `${suffix}-${method}-${Date.now()}.jpg`, { type: "image/jpeg", lastModified: Date.now() }));
     }, "image/jpeg", 0.9);
   });
+}
+
+export async function perspectiveCorrectVideoFrame({
+  cv,
+  video,
+  corners,
+  scanType,
+}: {
+  cv: OpenCvRuntime;
+  video: HTMLVideoElement;
+  corners: [Point, Point, Point, Point];
+  scanType: ScanType;
+}): Promise<CorrectedCapture> {
+  const output = scanTypeConfig[scanType].output;
+  const sourceCanvas = document.createElement("canvas");
+  sourceCanvas.width = video.videoWidth;
+  sourceCanvas.height = video.videoHeight;
+  const context = sourceCanvas.getContext("2d");
+  if (!context || !sourceCanvas.width || !sourceCanvas.height) throw new Error("Camera frame is not ready.");
+  context.drawImage(video, 0, 0, sourceCanvas.width, sourceCanvas.height);
+
+  let source: InstanceType<OpenCvRuntime["Mat"]> | null = null;
+  let destination: InstanceType<OpenCvRuntime["Mat"]> | null = null;
+  let transform: InstanceType<OpenCvRuntime["Mat"]> | null = null;
+  try {
+    source = cv.imread(sourceCanvas);
+    destination = new cv.Mat();
+    const sourcePoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
+      corners[0].x * sourceCanvas.width, corners[0].y * sourceCanvas.height,
+      corners[1].x * sourceCanvas.width, corners[1].y * sourceCanvas.height,
+      corners[2].x * sourceCanvas.width, corners[2].y * sourceCanvas.height,
+      corners[3].x * sourceCanvas.width, corners[3].y * sourceCanvas.height,
+    ]);
+    const destinationPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
+      0, 0,
+      output.width - 1, 0,
+      output.width - 1, output.height - 1,
+      0, output.height - 1,
+    ]);
+    transform = cv.getPerspectiveTransform(sourcePoints, destinationPoints);
+    cv.warpPerspective(source, destination, transform, new cv.Size(output.width, output.height), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
+    const targetCanvas = document.createElement("canvas");
+    targetCanvas.width = output.width;
+    targetCanvas.height = output.height;
+    cv.imshow(targetCanvas, destination);
+    sourcePoints.delete();
+    destinationPoints.delete();
+    return { file: await canvasToFile(targetCanvas, scanType, "perspective"), method: "perspective" };
+  } finally {
+    source?.delete();
+    destination?.delete();
+    transform?.delete();
+  }
 }
 
 export async function fixedOverlayCropVideoFrame(video: HTMLVideoElement, overlay: HTMLElement, scanType: ScanType): Promise<CorrectedCapture> {

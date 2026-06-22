@@ -7,15 +7,17 @@ import ScanPreview from "@/components/scanner/ScanPreview";
 import ScanTypeSelector from "@/components/scanner/ScanTypeSelector";
 import type { ScanType } from "@/components/scanner/scanTypes";
 import { scanTypeConfig } from "@/components/scanner/scanTypes";
-import { analyzeFrameFill, type FrameFillStatus } from "@/lib/image-processing/frameFillDetection";
-import { fixedOverlayCropVideoFrame, fullFrameCapture, type VideoCropRect } from "@/lib/image-processing/perspectiveCorrection";
+import { mapVideoPointToDisplayPoint, scanCardBoundary, type DetectedCardBoundary } from "@/lib/image-processing/cardBoundaryScanner";
+import { loadOpenCv, type OpenCvRuntime } from "@/lib/image-processing/opencvLoader";
+import { fixedOverlayCropVideoFrame, fullFrameCapture, perspectiveCorrectVideoFrame } from "@/lib/image-processing/perspectiveCorrection";
 
 type ScannerPhase = "select" | "camera" | "preview";
 type ScannerStatus =
+  | "loading"
   | "searching"
-  | "aligning"
-  | "detected"
-  | "hold-steady"
+  | "candidate"
+  | "valid"
+  | "stable"
   | "capturing"
   | "captured"
   | "fallback";
@@ -29,6 +31,10 @@ function stopStream(stream: MediaStream | null) {
 function isLikelyMobile() {
   if (typeof window === "undefined") return false;
   return window.matchMedia("(pointer: coarse)").matches || window.innerWidth < 768;
+}
+
+function averageCornerMovement(a: DetectedCardBoundary, b: DetectedCardBoundary) {
+  return a.corners.reduce((sum, point, index) => sum + Math.hypot(point.x - b.corners[index].x, point.y - b.corners[index].y), 0) / 4;
 }
 
 export default function GuidedCardScanner({
@@ -46,34 +52,38 @@ export default function GuidedCardScanner({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
-  const guideCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const analysisCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const previousGuideFrameRef = useRef<Uint8ClampedArray | null>(null);
-  const greenSinceRef = useRef<number | null>(null);
+  const cvRef = useRef<OpenCvRuntime | null>(null);
+  const previousBoundaryRef = useRef<DetectedCardBoundary | null>(null);
+  const stableSinceRef = useRef<number | null>(null);
   const lastCaptureAtRef = useRef(0);
-  const captureFrameRef = useRef<() => void>(() => {});
+  const captureFrameRef = useRef<(boundary?: DetectedCardBoundary | null) => void>(() => {});
   const capturingRef = useRef(false);
   const [phase, setPhase] = useState<ScannerPhase>("select");
   const [scanType, setScanType] = useState<ScanType | null>(null);
   const [cameraError, setCameraError] = useState("");
   const [scannerStatus, setScannerStatus] = useState<ScannerStatus>("searching");
-  const [frameFillStatus, setFrameFillStatus] = useState<FrameFillStatus>({ isFilled: false, fillScore: 0, edgeScore: 0, contrastScore: 0, stabilityScore: 0, reason: "Fit card inside frame" });
-  const [cropRect, setCropRect] = useState<VideoCropRect | null>(null);
-  const [greenDurationMs, setGreenDurationMs] = useState(0);
+  const [scannerMessage, setScannerMessage] = useState("Find card edges");
+  const [openCvError, setOpenCvError] = useState("");
+  const [detectedBoundary, setDetectedBoundary] = useState<DetectedCardBoundary | null>(null);
+  const [displayBoundary, setDisplayBoundary] = useState<DetectedCardBoundary | null>(null);
+  const [candidateCount, setCandidateCount] = useState(0);
+  const [stableDurationMs, setStableDurationMs] = useState(0);
   const [capturedFile, setCapturedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [overlayCropSucceeded, setOverlayCropSucceeded] = useState(true);
   const [capturing, setCapturing] = useState(false);
   const [autoCapture, setAutoCapture] = useState(isLikelyMobile);
-  const [lastCaptureSource, setLastCaptureSource] = useState<CaptureSource>("guide-frame");
+  const [lastCaptureSource, setLastCaptureSource] = useState<CaptureSource | "perspective">("guide-frame");
 
   useEffect(() => {
     capturingRef.current = capturing;
   }, [capturing]);
 
   useEffect(() => {
-    captureFrameRef.current = () => {
-      void captureFrame();
+    captureFrameRef.current = (boundary?: DetectedCardBoundary | null) => {
+      void captureFrame(boundary);
     };
   });
 
@@ -82,11 +92,13 @@ export default function GuidedCardScanner({
     setScanType(null);
     setCameraError("");
     setScannerStatus("searching");
-    setFrameFillStatus({ isFilled: false, fillScore: 0, edgeScore: 0, contrastScore: 0, stabilityScore: 0, reason: "Fit card inside frame" });
-    setCropRect(null);
-    setGreenDurationMs(0);
-    greenSinceRef.current = null;
-    previousGuideFrameRef.current = null;
+    setScannerMessage("Find card edges");
+    setDetectedBoundary(null);
+    setDisplayBoundary(null);
+    setCandidateCount(0);
+    setStableDurationMs(0);
+    stableSinceRef.current = null;
+    previousBoundaryRef.current = null;
     setCapturedFile(null);
     setOverlayCropSucceeded(true);
     setPreviewUrl((current) => {
@@ -134,41 +146,70 @@ export default function GuidedCardScanner({
 
   useEffect(() => {
     if (!open || phase !== "camera" || !scanType) return;
-    guideCanvasRef.current ||= document.createElement("canvas");
+    let active = true;
+    loadOpenCv()
+      .then((cv) => {
+        if (!active) return;
+        cvRef.current = cv;
+        setOpenCvError("");
+        setScannerStatus("searching");
+        setScannerMessage("Find card edges");
+      })
+      .catch((cause) => {
+        if (!active) return;
+        cvRef.current = null;
+        setOpenCvError(cause instanceof Error ? cause.message : "OpenCV failed to load.");
+        setScannerStatus("fallback");
+        setScannerMessage("Tap capture if auto-scan does not start");
+      });
+    return () => { active = false; };
+  }, [open, phase, scanType]);
+
+  useEffect(() => {
+    if (!open || phase !== "camera" || !scanType) return;
+    analysisCanvasRef.current ||= document.createElement("canvas");
     const interval = window.setInterval(() => {
-      if (capturingRef.current || !videoRef.current || !guideCanvasRef.current || !overlayRef.current) return;
+      const cv = cvRef.current;
+      if (capturingRef.current || !videoRef.current || !analysisCanvasRef.current || !cv) return;
       const videoReady = videoRef.current.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && Boolean(videoRef.current.videoWidth && videoRef.current.videoHeight);
       if (!videoReady) {
         setScannerStatus("searching");
-        setFrameFillStatus((current) => ({ ...current, isFilled: false, reason: "Camera is warming up" }));
-        setCropRect(null);
+        setScannerMessage("Camera is warming up");
+        setDetectedBoundary(null);
+        setDisplayBoundary(null);
         return;
       }
-      const frameFill = analyzeFrameFill({
-        video: videoRef.current,
-        overlay: overlayRef.current,
-        canvas: guideCanvasRef.current,
-        previous: previousGuideFrameRef.current,
-        scanType,
-      });
-      previousGuideFrameRef.current = frameFill.sample;
-      setCropRect(frameFill.cropRect);
-      setFrameFillStatus(frameFill.status);
-      const green = frameFill.status.isFilled && frameFill.status.stabilityScore >= 0.55;
-      greenSinceRef.current = green ? (greenSinceRef.current ?? performance.now()) : null;
-      const greenDuration = greenSinceRef.current ? performance.now() - greenSinceRef.current : 0;
-      setGreenDurationMs(greenDuration);
-      const status: ScannerStatus = green ? "hold-steady" : frameFill.status.fillScore > 0.42 || frameFill.status.edgeScore > 0.18 ? "detected" : videoReady ? "aligning" : "searching";
-      setScannerStatus(status);
-      const cooldownPassed = performance.now() - lastCaptureAtRef.current > 1800;
-      if (autoCapture && green && greenDuration >= 1500 && cooldownPassed) {
-        lastCaptureAtRef.current = performance.now();
-        captureFrameRef.current();
+      const result = scanCardBoundary({ cv, video: videoRef.current, canvas: analysisCanvasRef.current, scanType });
+      setCandidateCount(result.candidates);
+      setDetectedBoundary(result.boundary);
+      setDisplayBoundary(result.boundary ? { ...result.boundary, corners: result.boundary.corners.map((point) => mapVideoPointToDisplayPoint(point, videoRef.current as HTMLVideoElement)) as DetectedCardBoundary["corners"] } : null);
+      const valid = Boolean(result.boundary && result.status === "valid" && result.boundary.confidence >= 0.62 && result.boundary.areaRatio >= 0.08 && result.boundary.centerOffset < 0.42);
+      if (!valid) {
+        previousBoundaryRef.current = result.boundary;
+        stableSinceRef.current = null;
+        setStableDurationMs(0);
+        setScannerStatus(result.status as ScannerStatus);
+        setScannerMessage(result.message);
+        return;
       }
-    }, 220);
+      const previous = previousBoundaryRef.current;
+      const movement = previous ? averageCornerMovement(result.boundary as DetectedCardBoundary, previous) : 1;
+      previousBoundaryRef.current = result.boundary;
+      stableSinceRef.current = movement < 0.018 ? (stableSinceRef.current ?? performance.now()) : null;
+      const stableMs = stableSinceRef.current ? performance.now() - stableSinceRef.current : 0;
+      setStableDurationMs(stableMs);
+      const stable = stableMs >= 900;
+      setScannerStatus(stable ? "stable" : "valid");
+      setScannerMessage(stable ? "Capturing..." : "Hold steady");
+      const cooldownPassed = performance.now() - lastCaptureAtRef.current > 1800;
+      if (autoCapture && stable && cooldownPassed) {
+        lastCaptureAtRef.current = performance.now();
+        captureFrameRef.current(result.boundary);
+      }
+    }, 120);
     return () => {
       window.clearInterval(interval);
-      greenSinceRef.current = null;
+      stableSinceRef.current = null;
     };
   }, [open, phase, scanType, autoCapture]);
 
@@ -183,25 +224,31 @@ export default function GuidedCardScanner({
 
   function selectType(type: ScanType) {
     setScanType(type);
-    setScannerStatus("searching");
-    greenSinceRef.current = null;
-    previousGuideFrameRef.current = null;
-    setGreenDurationMs(0);
+    setScannerStatus(cvRef.current ? "searching" : "loading");
+    setScannerMessage(cvRef.current ? "Find card edges" : "Loading scanner...");
+    stableSinceRef.current = null;
+    previousBoundaryRef.current = null;
+    setStableDurationMs(0);
+    setDetectedBoundary(null);
+    setDisplayBoundary(null);
     setPhase("camera");
   }
 
-  async function captureFrame() {
+  async function captureFrame(boundaryOverride?: DetectedCardBoundary | null) {
     if (!videoRef.current || !overlayRef.current || !scanType || capturing) return;
     setCapturing(true);
     setScannerStatus("capturing");
     try {
       const video = videoRef.current;
       const overlay = overlayRef.current;
-      const capture = await fixedOverlayCropVideoFrame(video, overlay, scanType);
+      const boundary = boundaryOverride || detectedBoundary;
+      const capture = boundary?.isValidForScanType && cvRef.current
+        ? await perspectiveCorrectVideoFrame({ cv: cvRef.current, video, corners: boundary.corners, scanType }).catch(() => fixedOverlayCropVideoFrame(video, overlay, scanType))
+        : await fixedOverlayCropVideoFrame(video, overlay, scanType);
       const url = URL.createObjectURL(capture.file);
       setCapturedFile(capture.file);
-      setLastCaptureSource("guide-frame");
-      setOverlayCropSucceeded(true);
+      setLastCaptureSource(capture.method === "perspective" ? "perspective" : "guide-frame");
+      setOverlayCropSucceeded(capture.method !== "full-frame-fallback");
       setPreviewUrl((current) => {
         if (current) URL.revokeObjectURL(current);
         return url;
@@ -240,9 +287,12 @@ export default function GuidedCardScanner({
     setCapturedFile(null);
     setOverlayCropSucceeded(true);
     setScannerStatus("searching");
-    greenSinceRef.current = null;
-    previousGuideFrameRef.current = null;
-    setGreenDurationMs(0);
+    setScannerMessage("Find card edges");
+    stableSinceRef.current = null;
+    previousBoundaryRef.current = null;
+    setStableDurationMs(0);
+    setDetectedBoundary(null);
+    setDisplayBoundary(null);
     setPreviewUrl((current) => {
       if (current) URL.revokeObjectURL(current);
       return null;
@@ -256,10 +306,8 @@ export default function GuidedCardScanner({
     closeScanner();
   }
 
-  const defaultGuideMessage = scanType ? scanTypeConfig[scanType].guidance : "Place card inside frame";
-  const countdownReady = autoCapture && scannerStatus === "hold-steady" && greenDurationMs >= 1200;
-  const detectionState = capturing || countdownReady ? "capturing" : scannerStatus === "hold-steady" ? "aligned" : scannerStatus === "detected" ? "detected" : "searching";
-  const detectionMessage = capturing ? "Capturing..." : countdownReady ? "Capturing..." : scannerStatus === "hold-steady" ? "Hold steady" : scannerStatus === "detected" ? frameFillStatus.reason : defaultGuideMessage;
+  const detectionState = capturing || scannerStatus === "stable" ? "capturing" : scannerStatus === "valid" ? "aligned" : scannerStatus === "candidate" ? "detected" : scannerStatus === "fallback" ? "failed" : "searching";
+  const detectionMessage = capturing ? "Capturing..." : scannerMessage;
   const showDebug = process.env.NODE_ENV === "development";
 
   return <div className="fixed inset-0 z-50 bg-[var(--background)] text-[var(--text-primary)]">
@@ -275,7 +323,7 @@ export default function GuidedCardScanner({
 
     {phase === "camera" && scanType && <div className="relative min-h-[100svh] overflow-hidden bg-black text-white">
       <video ref={videoRef} playsInline muted className="absolute inset-0 h-full w-full object-cover" />
-      <BoundaryOverlay type={scanType} overlayRef={overlayRef} state={detectionState} message={detectionMessage} />
+      <BoundaryOverlay type={scanType} overlayRef={overlayRef} detectedBoundary={displayBoundary} state={detectionState} message={detectionMessage} />
       <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-3 bg-gradient-to-b from-black/80 to-transparent px-4 pb-8 pt-[max(1rem,env(safe-area-inset-top))]">
         <button type="button" onClick={() => { stopStream(streamRef.current); streamRef.current = null; setPhase("select"); }} className="min-h-11 rounded-full bg-black/45 px-4 text-sm font-semibold text-white backdrop-blur">Back</button>
         <div className="text-center">
@@ -286,23 +334,21 @@ export default function GuidedCardScanner({
       </div>
       <div className="absolute left-4 top-24 rounded-full border border-white/15 bg-black/60 px-3 py-2 text-xs font-semibold text-white backdrop-blur">
         <label className="flex items-center gap-2">
-          <input type="checkbox" className="accent-[var(--gold-primary)]" checked={autoCapture} onChange={(event) => { setAutoCapture(event.target.checked); greenSinceRef.current = null; setGreenDurationMs(0); }} />
+          <input type="checkbox" className="accent-[var(--gold-primary)]" checked={autoCapture} onChange={(event) => { setAutoCapture(event.target.checked); stableSinceRef.current = null; setStableDurationMs(0); }} />
           Auto capture
         </label>
       </div>
       {showDebug && <div className="absolute right-4 top-24 max-w-[12rem] rounded-xl border border-white/15 bg-black/70 p-3 text-[10px] leading-4 text-white/80 backdrop-blur">
+        <p>opencv: {cvRef.current ? "loaded" : openCvError ? "error" : "loading"}</p>
         <p>status: {scannerStatus}</p>
-        <p>video: {cropRect ? `${cropRect.videoWidth}x${cropRect.videoHeight}` : "pending"}</p>
-        <p>client: {cropRect ? `${Math.round(cropRect.clientWidth)}x${Math.round(cropRect.clientHeight)}` : "pending"}</p>
-        <p>crop: {cropRect ? `${Math.round(cropRect.sx)},${Math.round(cropRect.sy)},${Math.round(cropRect.sw)},${Math.round(cropRect.sh)}` : "pending"}</p>
-        <p>filled: {frameFillStatus.isFilled ? "yes" : "no"}</p>
-        <p>fill: {frameFillStatus.fillScore.toFixed(2)}</p>
-        <p>contrast: {frameFillStatus.contrastScore.toFixed(2)}</p>
-        <p>stability: {frameFillStatus.stabilityScore.toFixed(2)}</p>
-        <p>green: {Math.round(greenDurationMs)}ms</p>
+        <p>candidates: {candidateCount}</p>
+        <p>confidence: {Math.round((detectedBoundary?.confidence || 0) * 100)}%</p>
+        <p>aspect: {detectedBoundary?.aspectRatio.toFixed(2) || "n/a"}</p>
+        <p>area: {detectedBoundary?.areaRatio.toFixed(2) || "n/a"}</p>
+        <p>center: {detectedBoundary?.centerOffset.toFixed(2) || "n/a"}</p>
+        <p>stable: {Math.round(stableDurationMs)}ms</p>
         <p>auto: {autoCapture ? "on" : "off"}</p>
         <p>capture: {lastCaptureSource}</p>
-        <p>edge: {frameFillStatus.edgeScore.toFixed(2)}</p>
       </div>}
       {cameraError && <div className="absolute inset-x-4 top-24 rounded-xl border border-[var(--status-warning)] bg-black/80 p-4 text-sm leading-6 text-white shadow-xl backdrop-blur">
         <p>{cameraError}</p>
