@@ -3,7 +3,9 @@
 import type { RefObject } from "react";
 import type { ScanType } from "@/components/scanner/scanTypes";
 import { scanTypeConfig } from "@/components/scanner/scanTypes";
-import type { BoundaryDetectionState, DetectedBoundary } from "@/lib/image-processing/liveBoundaryDetection";
+
+type BoundaryDetectionState = "searching" | "detected" | "aligned" | "capturing" | "failed";
+type OverlayBoundary = { corners: [{ x: number; y: number }, { x: number; y: number }, { x: number; y: number }, { x: number; y: number }] };
 
 const stateColor: Record<BoundaryDetectionState, string> = {
   searching: "rgba(255,255,255,.72)",
@@ -22,7 +24,7 @@ export default function BoundaryOverlay({
 }: {
   type: ScanType;
   overlayRef: RefObject<HTMLDivElement | null>;
-  detectedBoundary?: DetectedBoundary | null;
+  detectedBoundary?: OverlayBoundary | null;
   state?: BoundaryDetectionState;
   message?: string;
 }) {
