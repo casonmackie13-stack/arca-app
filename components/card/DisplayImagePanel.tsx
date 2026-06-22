@@ -1,0 +1,9 @@
+import ArcaImage from "@/components/ui/ArcaImage";
+import { Button } from "@/components/ui/Button";
+import { Panel } from "@/components/ui/Surface";
+import type { CardImageLookupResponse, ImageSuggestion } from "@/lib/card-intelligence";
+
+export default function DisplayImagePanel({ originalUrl, lookup, selected, onSelect }: { originalUrl: string; lookup: CardImageLookupResponse | null; selected: ImageSuggestion | null; onSelect: (value: ImageSuggestion | null) => void }) {
+  const suggestion = lookup?.suggestions[0];
+  return <Panel className="space-y-5 p-5 md:p-7"><div><p className="eyebrow">Display image</p><h3 className="heading-3 mt-2">Choose what appears in your vault</h3><p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">Your original capture is always preserved privately.</p></div><div className="grid gap-4 sm:grid-cols-2"><div><div className="relative aspect-[2.5/3.5] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-black"><ArcaImage src={originalUrl} alt="Original uploaded card" className="object-contain"/></div><Button className="mt-3 w-full" variant={selected ? "secondary" : "outline"} onClick={() => onSelect(null)}>Keep my uploaded image</Button></div>{suggestion && <div><div className="relative aspect-[2.5/3.5] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-black"><ArcaImage src={suggestion.image_url} alt="Suggested display image" className="object-contain"/></div><Button className="mt-3 w-full" variant={selected ? "outline" : "secondary"} onClick={() => onSelect(suggestion)}>Use suggested display image</Button><p className="mt-2 text-xs text-[var(--text-tertiary)]">Source: {suggestion.source}</p></div>}</div>{!suggestion && <p className="text-sm text-[var(--text-tertiary)]">{lookup?.message || "Better image lookup is not connected yet."}</p>}</Panel>;
+}

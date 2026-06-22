@@ -16,6 +16,7 @@ type GradeMode = "all" | "raw" | "graded";
 
 const cardFields = `
   id, collection_id, player_name, sport, year, brand, set_name, card_number,
+  team, parallel, rookie_card, serial_number, condition,
   grader, grade, estimated_value, status, notes, created_at,
   card_images ( image_url, image_type ),
   collection:collections ( id, name )
@@ -77,7 +78,7 @@ export default function SearchPage() {
   const normalizedQuery = query.trim().toLowerCase();
 
   const results = useMemo(() => cards.filter((card) => {
-    const searchable = [card.player_name, card.brand, card.set_name, card.year, card.grader, card.grade, card.status, card.status?.replaceAll("_", " "), card.collection?.name]
+    const searchable = [card.player_name, card.brand, card.set_name, card.year, card.team, card.parallel, card.serial_number, card.condition, card.grader, card.grade, card.status, card.status?.replaceAll("_", " "), card.collection?.name]
       .filter((value) => value !== null && value !== undefined)
       .join(" ")
       .toLowerCase();

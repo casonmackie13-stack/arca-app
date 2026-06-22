@@ -82,6 +82,7 @@ export default function EditCardPage() {
     setSaving(true); setMessage("");
     let uploadedPath: string | null = null;
     let replacementRowId: string | null = null;
+    let nextUrl: string | null = null;
     let updatedExistingImage = false;
     let removeNewUploadOnFailure = true;
     try {
@@ -96,7 +97,7 @@ export default function EditCardPage() {
         uploadedPath = `cards/${authData.user.id}-${Date.now()}-${createMobileSafeId()}.${extension}`;
         const { error: uploadError } = await supabase.storage.from("card_images").upload(uploadedPath, replacement, { contentType: replacement.type, upsert: false });
         if (uploadError) throw uploadError;
-        const nextUrl = supabase.storage.from("card_images").getPublicUrl(uploadedPath).data.publicUrl;
+        nextUrl = supabase.storage.from("card_images").getPublicUrl(uploadedPath).data.publicUrl;
         if (currentImage?.id) {
           const { error: imageError } = await supabase.from("card_images").update({ image_url: nextUrl, image_type: "front" }).eq("id", currentImage.id).eq("card_id", cardId);
           if (imageError) throw imageError;
@@ -108,7 +109,8 @@ export default function EditCardPage() {
         }
       }
 
-      const { data: updated, error: updateError } = await supabase.from("cards").update({ ...cardMutation(form), collection_id: selectedCollectionId }).eq("id", cardId).eq("owner_id", authData.user.id).select("id").single();
+      const imageMetadata = replacement && nextUrl ? { original_image_url: nextUrl, display_image_url: nextUrl, image_source: "user_upload", image_source_url: null, image_replacement_status: "original" } : {};
+      const { data: updated, error: updateError } = await supabase.from("cards").update({ ...cardMutation(form), collection_id: selectedCollectionId, ...imageMetadata }).eq("id", cardId).eq("owner_id", authData.user.id).select("id").single();
       if (updateError || !updated) {
         if (updatedExistingImage && currentImage?.id) {
           const { error: rollbackError } = await supabase.from("card_images").update({ image_url: currentImage.image_url, image_type: currentImage.image_type || "front" }).eq("id", currentImage.id).eq("card_id", cardId);

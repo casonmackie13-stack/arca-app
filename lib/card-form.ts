@@ -7,6 +7,11 @@ export type CardFormValue = {
   brand: string;
   setName: string;
   cardNumber: string;
+  team: string;
+  parallel: string;
+  rookieCard: "unknown" | "yes" | "no";
+  serialNumber: string;
+  condition: string;
   grader: string;
   grade: string;
   estimatedValue: string;
@@ -14,10 +19,10 @@ export type CardFormValue = {
   notes: string;
 };
 
-export const emptyCardForm: CardFormValue = { playerName: "", sport: "Basketball", year: "", brand: "", setName: "", cardNumber: "", grader: "Raw", grade: "", estimatedValue: "", status: "personal_collection", notes: "" };
+export const emptyCardForm: CardFormValue = { playerName: "", sport: "Basketball", year: "", brand: "", setName: "", cardNumber: "", team: "", parallel: "", rookieCard: "unknown", serialNumber: "", condition: "", grader: "Raw", grade: "", estimatedValue: "", status: "personal_collection", notes: "" };
 
 export function cardToForm(card: CardSummary): CardFormValue {
-  return { playerName: card.player_name || "", sport: card.sport || "Basketball", year: card.year == null ? "" : String(card.year), brand: card.brand || "", setName: card.set_name || "", cardNumber: card.card_number || "", grader: card.grader || "Raw", grade: card.grade === "Raw" ? "" : card.grade || "", estimatedValue: card.estimated_value == null ? "" : String(card.estimated_value), status: card.status || "personal_collection", notes: card.notes || "" };
+  return { playerName: card.player_name || "", sport: card.sport || "Basketball", year: card.year == null ? "" : String(card.year), brand: card.brand || "", setName: card.set_name || "", cardNumber: card.card_number || "", team: card.team || "", parallel: card.parallel || "", rookieCard: card.rookie_card == null ? "unknown" : card.rookie_card ? "yes" : "no", serialNumber: card.serial_number || "", condition: card.condition || "", grader: card.grader || "Raw", grade: card.grade === "Raw" ? "" : card.grade || "", estimatedValue: card.estimated_value == null ? "" : String(card.estimated_value), status: card.status || "personal_collection", notes: card.notes || "" };
 }
 
 export function validateCardForm(value: CardFormValue, imageFile?: File | null) {
@@ -56,5 +61,5 @@ export function validateCardValue(value: CardFormValue) {
 
 export function cardMutation(value: CardFormValue) {
   const estimatedValue = value.estimatedValue.replace(/[$,]/g, "").trim();
-  return { player_name: value.playerName.trim(), sport: value.sport, year: value.year.trim() ? Number(value.year) : null, brand: value.brand.trim(), set_name: value.setName.trim(), card_number: value.cardNumber.trim(), grader: value.grader, grade: value.grader === "Raw" ? "Raw" : value.grade.trim(), estimated_value: estimatedValue ? Number(estimatedValue) : null, status: value.status, notes: value.notes.trim() };
+  return { player_name: value.playerName.trim(), sport: value.sport, year: value.year.trim() ? Number(value.year) : null, brand: value.brand.trim(), set_name: value.setName.trim(), card_number: value.cardNumber.trim(), team: value.team.trim(), parallel: value.parallel.trim(), rookie_card: value.rookieCard === "unknown" ? null : value.rookieCard === "yes", serial_number: value.serialNumber.trim(), condition: value.condition.trim(), grader: value.grader, grade: value.grader === "Raw" ? "Raw" : value.grade.trim(), estimated_value: estimatedValue ? Number(estimatedValue) : null, status: value.status, notes: value.notes.trim() };
 }
