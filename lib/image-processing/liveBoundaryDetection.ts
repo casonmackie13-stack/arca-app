@@ -28,7 +28,7 @@ export type BoundaryDetectionResult = {
 type EdgePoint = Point & { magnitude: number };
 
 const sampleWidth = 220;
-const minAreaRatio = 0.08;
+const minAreaRatio = 0.06;
 const maxAreaRatio = 0.82;
 
 function clamp(value: number, min: number, max: number) {
@@ -95,18 +95,18 @@ function edgePointsFromImage(data: ImageData) {
       const gx = -gray[i - width - 1] - 2 * gray[i - 1] - gray[i + width - 1] + gray[i - width + 1] + 2 * gray[i + 1] + gray[i + width + 1];
       const gy = -gray[i - width - 1] - 2 * gray[i - width] - gray[i - width + 1] + gray[i + width - 1] + 2 * gray[i + width] + gray[i + width + 1];
       const magnitude = Math.hypot(gx, gy);
-      if (magnitude > 36) {
+      if (magnitude > 28) {
         magnitudes.push(magnitude);
         raw.push({ x, y, magnitude });
       }
     }
   }
-  const threshold = Math.max(48, percentile(magnitudes, 0.72));
+  const threshold = Math.max(34, percentile(magnitudes, 0.64));
   return raw.filter((point) => point.magnitude >= threshold);
 }
 
 function buildBoundary(points: EdgePoint[], width: number, height: number, scanType: ScanType): DetectedBoundary | null {
-  if (points.length < 80) return null;
+  if (points.length < 36) return null;
   const xs = points.map((point) => point.x);
   const ys = points.map((point) => point.y);
   const left = percentile(xs, 0.06);
@@ -115,7 +115,7 @@ function buildBoundary(points: EdgePoint[], width: number, height: number, scanT
   const bottom = percentile(ys, 0.94);
   const boxWidth = right - left;
   const boxHeight = bottom - top;
-  if (boxWidth < width * 0.18 || boxHeight < height * 0.18) return null;
+  if (boxWidth < width * 0.14 || boxHeight < height * 0.14) return null;
 
   const marginX = Math.max(8, boxWidth * 0.16);
   const marginY = Math.max(8, boxHeight * 0.16);
@@ -164,11 +164,11 @@ function buildBoundary(points: EdgePoint[], width: number, height: number, scanT
 function stateForBoundary(boundary: DetectedBoundary | null, scanType: ScanType): BoundaryDetectionResult {
   if (!boundary) return { boundary: null, state: "searching", message: "Align card inside frame" };
   const target = scanTypeConfig[scanType].output.width / scanTypeConfig[scanType].output.height;
-  if (Math.abs(boundary.aspectRatio - target) > target * 0.35) return { boundary, state: "detected", message: "Check scan type" };
+  if (Math.abs(boundary.aspectRatio - target) > target * 0.5) return { boundary, state: "detected", message: "Check scan type" };
   if (boundary.areaRatio < minAreaRatio) return { boundary, state: "detected", message: "Move closer" };
-  if (boundary.tiltScore > 0.62) return { boundary, state: "detected", message: "Too much tilt" };
-  if (boundary.centerOffset > 0.34) return { boundary, state: "detected", message: "Center the card" };
-  if (boundary.confidence >= 0.72) return { boundary, state: "aligned", message: "Hold steady" };
+  if (boundary.tiltScore > 0.78) return { boundary, state: "detected", message: "Too much tilt" };
+  if (boundary.centerOffset > 0.44) return { boundary, state: "detected", message: "Center the card" };
+  if (boundary.confidence >= 0.58) return { boundary, state: "aligned", message: "Hold steady" };
   return { boundary, state: "detected", message: "Card detected" };
 }
 
@@ -184,7 +184,7 @@ export function detectLiveBoundary(video: HTMLVideoElement, canvas: HTMLCanvasEl
   if (!context) return { boundary: null, state: "failed", message: "Scanner unavailable" };
   context.drawImage(video, 0, 0, width, height);
   const points = edgePointsFromImage(context.getImageData(0, 0, width, height));
-  if (points.length > width * height * 0.22) return { boundary: null, state: "detected", message: "Multiple edges detected" };
+  if (points.length > width * height * 0.35) return { boundary: null, state: "detected", message: "Multiple edges detected" };
   const boundary = buildBoundary(points, width, height, scanType);
   return stateForBoundary(boundary, scanType);
 }
