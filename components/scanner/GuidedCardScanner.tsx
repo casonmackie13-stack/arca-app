@@ -24,6 +24,16 @@ type ScannerStatus =
 
 type CaptureSource = "guide-frame" | "fallback";
 
+type CameraDiagnostics = {
+  permissionState: string;
+  streamActive: boolean;
+  readyState: number;
+  videoWidth: number;
+  videoHeight: number;
+  paused: boolean;
+  currentTime: number;
+};
+
 function stopStream(stream: MediaStream | null) {
   stream?.getTracks().forEach((track) => track.stop());
 }
@@ -35,6 +45,29 @@ function isLikelyMobile() {
 
 function averageCornerMovement(a: DetectedCardBoundary, b: DetectedCardBoundary) {
   return a.corners.reduce((sum, point, index) => sum + Math.hypot(point.x - b.corners[index].x, point.y - b.corners[index].y), 0) / 4;
+}
+
+function waitForLoadedMetadata(video: HTMLVideoElement) {
+  if (video.readyState >= HTMLMediaElement.HAVE_METADATA && video.videoWidth && video.videoHeight) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      video.removeEventListener("loadedmetadata", handleLoaded);
+      video.removeEventListener("error", handleError);
+    };
+    const handleLoaded = () => { cleanup(); resolve(); };
+    const handleError = () => { cleanup(); reject(new Error("Camera video failed to load.")); };
+    video.addEventListener("loadedmetadata", handleLoaded, { once: true });
+    video.addEventListener("error", handleError, { once: true });
+  });
+}
+
+async function cameraPermissionState() {
+  try {
+    const permissions = navigator.permissions as Permissions & { query: (descriptor: { name: "camera" }) => Promise<PermissionStatus> };
+    return (await permissions.query({ name: "camera" })).state;
+  } catch {
+    return "unknown";
+  }
 }
 
 export default function GuidedCardScanner({
@@ -63,6 +96,8 @@ export default function GuidedCardScanner({
   const [phase, setPhase] = useState<ScannerPhase>("select");
   const [scanType, setScanType] = useState<ScanType | null>(null);
   const [cameraError, setCameraError] = useState("");
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraDiagnostics, setCameraDiagnostics] = useState<CameraDiagnostics>({ permissionState: "unknown", streamActive: false, readyState: 0, videoWidth: 0, videoHeight: 0, paused: true, currentTime: 0 });
   const [scannerStatus, setScannerStatus] = useState<ScannerStatus>("searching");
   const [scannerMessage, setScannerMessage] = useState("Find card edges");
   const [openCvError, setOpenCvError] = useState("");
@@ -91,6 +126,8 @@ export default function GuidedCardScanner({
     setPhase("select");
     setScanType(null);
     setCameraError("");
+    setCameraReady(false);
+    setCameraDiagnostics({ permissionState: "unknown", streamActive: false, readyState: 0, videoWidth: 0, videoHeight: 0, paused: true, currentTime: 0 });
     setScannerStatus("searching");
     setScannerMessage("Find card edges");
     setDetectedBoundary(null);
@@ -117,16 +154,49 @@ export default function GuidedCardScanner({
     let active = true;
     async function startCamera() {
       setCameraError("");
+      setCameraReady(false);
       stopStream(streamRef.current);
       streamRef.current = null;
       try {
         if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera is not available on this device.");
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+        setCameraDiagnostics((current) => ({ ...current, permissionState: "prompt" }));
+        void cameraPermissionState().then((permissionState) => { if (active) setCameraDiagnostics((current) => ({ ...current, permissionState })); });
+        const attempts: MediaStreamConstraints[] = [
+          { video: { facingMode: { ideal: "environment" } }, audio: false },
+          { video: { facingMode: "environment" }, audio: false },
+          { video: true, audio: false },
+        ];
+        let stream: MediaStream | null = null;
+        let lastError: unknown = null;
+        for (const constraints of attempts) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            break;
+          } catch (cause) {
+            lastError = cause;
+          }
+        }
+        if (!stream) throw lastError instanceof Error ? lastError : new Error("Camera is unavailable.");
         if (!active) { stopStream(stream); return; }
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
+          videoRef.current.muted = true;
+          videoRef.current.playsInline = true;
+          await waitForLoadedMetadata(videoRef.current);
           await videoRef.current.play();
+          setCameraReady(true);
+          setScannerStatus(cvRef.current ? "searching" : "loading");
+          setScannerMessage(cvRef.current ? "Find card edges" : "Camera ready. Edge detection loading...");
+          setCameraDiagnostics((current) => ({
+            ...current,
+            streamActive: stream.getVideoTracks().some((track) => track.readyState === "live"),
+            readyState: videoRef.current?.readyState || 0,
+            videoWidth: videoRef.current?.videoWidth || 0,
+            videoHeight: videoRef.current?.videoHeight || 0,
+            paused: Boolean(videoRef.current?.paused),
+            currentTime: videoRef.current?.currentTime || 0,
+          }));
         }
       } catch (cause) {
         if (!active) return;
@@ -134,6 +204,8 @@ export default function GuidedCardScanner({
           ? "Camera permission was denied. You can still choose a photo from your library."
           : cause instanceof Error ? cause.message : "Camera is unavailable. You can still choose a photo from your library.";
         setCameraError(message);
+        setCameraReady(false);
+        setCameraDiagnostics((current) => ({ ...current, streamActive: false }));
       }
     }
     void startCamera();
@@ -141,11 +213,12 @@ export default function GuidedCardScanner({
       active = false;
       stopStream(streamRef.current);
       streamRef.current = null;
+      setCameraReady(false);
     };
   }, [open, phase, scanType]);
 
   useEffect(() => {
-    if (!open || phase !== "camera" || !scanType) return;
+    if (!open || phase !== "camera" || !scanType || !cameraReady) return;
     let active = true;
     loadOpenCv()
       .then((cv) => {
@@ -160,13 +233,13 @@ export default function GuidedCardScanner({
         cvRef.current = null;
         setOpenCvError(cause instanceof Error ? cause.message : "OpenCV failed to load.");
         setScannerStatus("fallback");
-        setScannerMessage("Tap capture if auto-scan does not start");
+        setScannerMessage("Camera ready. Manual scan available.");
       });
     return () => { active = false; };
-  }, [open, phase, scanType]);
+  }, [open, phase, scanType, cameraReady]);
 
   useEffect(() => {
-    if (!open || phase !== "camera" || !scanType) return;
+    if (!open || phase !== "camera" || !scanType || !cameraReady) return;
     analysisCanvasRef.current ||= document.createElement("canvas");
     const interval = window.setInterval(() => {
       const cv = cvRef.current;
@@ -211,7 +284,24 @@ export default function GuidedCardScanner({
       window.clearInterval(interval);
       stableSinceRef.current = null;
     };
-  }, [open, phase, scanType, autoCapture]);
+  }, [open, phase, scanType, autoCapture, cameraReady]);
+
+  useEffect(() => {
+    if (!open || phase !== "camera") return;
+    const interval = window.setInterval(() => {
+      const video = videoRef.current;
+      setCameraDiagnostics((current) => ({
+        ...current,
+        streamActive: streamRef.current?.getVideoTracks().some((track) => track.readyState === "live") || false,
+        readyState: video?.readyState || 0,
+        videoWidth: video?.videoWidth || 0,
+        videoHeight: video?.videoHeight || 0,
+        paused: video?.paused ?? true,
+        currentTime: video?.currentTime || 0,
+      }));
+    }, 500);
+    return () => window.clearInterval(interval);
+  }, [open, phase]);
 
   if (!open) return null;
 
@@ -224,8 +314,9 @@ export default function GuidedCardScanner({
 
   function selectType(type: ScanType) {
     setScanType(type);
-    setScannerStatus(cvRef.current ? "searching" : "loading");
-    setScannerMessage(cvRef.current ? "Find card edges" : "Loading scanner...");
+    setCameraReady(false);
+    setScannerStatus("searching");
+    setScannerMessage("Starting camera...");
     stableSinceRef.current = null;
     previousBoundaryRef.current = null;
     setStableDurationMs(0);
@@ -322,7 +413,7 @@ export default function GuidedCardScanner({
     </div>}
 
     {phase === "camera" && scanType && <div className="relative min-h-[100svh] overflow-hidden bg-black text-white">
-      <video ref={videoRef} playsInline muted className="absolute inset-0 h-full w-full object-cover" />
+      <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 z-0 h-full w-full bg-black object-cover" />
       <BoundaryOverlay type={scanType} overlayRef={overlayRef} detectedBoundary={displayBoundary} state={detectionState} message={detectionMessage} />
       <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-3 bg-gradient-to-b from-black/80 to-transparent px-4 pb-8 pt-[max(1rem,env(safe-area-inset-top))]">
         <button type="button" onClick={() => { stopStream(streamRef.current); streamRef.current = null; setPhase("select"); }} className="min-h-11 rounded-full bg-black/45 px-4 text-sm font-semibold text-white backdrop-blur">Back</button>
@@ -340,6 +431,13 @@ export default function GuidedCardScanner({
       </div>
       {showDebug && <div className="absolute right-4 top-24 max-w-[12rem] rounded-xl border border-white/15 bg-black/70 p-3 text-[10px] leading-4 text-white/80 backdrop-blur">
         <p>opencv: {cvRef.current ? "loaded" : openCvError ? "error" : "loading"}</p>
+        <p>permission: {cameraDiagnostics.permissionState}</p>
+        <p>stream: {cameraDiagnostics.streamActive ? "active" : "inactive"}</p>
+        <p>ready: {cameraDiagnostics.readyState}</p>
+        <p>video: {cameraDiagnostics.videoWidth}x{cameraDiagnostics.videoHeight}</p>
+        <p>paused: {cameraDiagnostics.paused ? "yes" : "no"}</p>
+        <p>time: {cameraDiagnostics.currentTime.toFixed(1)}</p>
+        <p>cameraError: {cameraError || "none"}</p>
         <p>status: {scannerStatus}</p>
         <p>candidates: {candidateCount}</p>
         <p>confidence: {Math.round((detectedBoundary?.confidence || 0) * 100)}%</p>
