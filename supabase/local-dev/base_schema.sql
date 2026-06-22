@@ -1,14 +1,18 @@
--- Base schema for ARCA.
+-- Base schema for ARCA (LOCAL DEVELOPMENT ONLY).
 --
--- The incremental migrations that follow this file (collection covers, safe
+-- This file lives in supabase/local-dev/ on purpose: it is NOT a migration and
+-- must never be pushed to the hosted/production database via `supabase db push`.
+--
+-- The production migrations in supabase/migrations/ (collection covers, safe
 -- deletion, card intelligence archive, front/back images) assume the core
 -- tables, storage bucket, and row level security policies below already exist.
 -- That base schema was originally provisioned directly in the hosted Supabase
--- project and never committed, so this migration reconstructs it idempotently
--- to make local (and any fresh) Supabase environments work end to end.
+-- project and never committed, so this file reconstructs it idempotently to make
+-- a fresh LOCAL Supabase stack work end to end. It must be applied BEFORE the
+-- production migrations run -- supabase/local-dev/setup-local-db.sh does that.
 --
 -- Everything here uses "if not exists" / "drop ... if exists" so it is safe to
--- run against an environment that already has the base objects.
+-- run repeatedly.
 
 -- Profiles ------------------------------------------------------------------
 create table if not exists public.profiles (
