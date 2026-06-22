@@ -30,12 +30,15 @@ import { supabase } from "@/lib/supabase";
 import type { CollectionSummary } from "@/lib/types";
 import type { CardAutofillResponse, CardImageLookupResponse, CardSalesResponse, ImageSuggestion } from "@/lib/card-intelligence";
 import { salePrice } from "@/lib/card-sales";
+import { analyzeCardImage, type CardDetectionAnalysis } from "@/lib/image-processing/cardDetection";
+import { formatCardImage } from "@/lib/image-processing/cardFormatting";
 
 const steps = ["Capture image", "Card details", "Condition", "Collection", "Value", "Review & save"] as const;
 
 export default function AddCardClient({ initialCollectionId }: { initialCollectionId?: string }) {
   const router = useRouter();
   const stepHeadingRef = useRef<HTMLHeadingElement>(null);
+  const imageProcessingId = useRef({ front: 0, back: 0 });
   const [currentStep, setCurrentStep] = useState(0);
   const [form, setForm] = useState(() => ({ ...emptyCardForm }));
   const [collections, setCollections] = useState<CollectionSummary[]>([]);
@@ -47,6 +50,10 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
   const [backFile, setBackFile] = useState<File | null>(null);
   const [frontPreview, setFrontPreview] = useState<string | null>(null);
   const [backPreview, setBackPreview] = useState<string | null>(null);
+  const [frontAnalysis, setFrontAnalysis] = useState<CardDetectionAnalysis | null>(null);
+  const [backAnalysis, setBackAnalysis] = useState<CardDetectionAnalysis | null>(null);
+  const [frontProcessing, setFrontProcessing] = useState(false);
+  const [backProcessing, setBackProcessing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [autofilling, setAutofilling] = useState(false);
   const [autofillMessage, setAutofillMessage] = useState("");
@@ -86,16 +93,44 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
 
   useEffect(() => () => { if (frontPreview) URL.revokeObjectURL(frontPreview); if (backPreview) URL.revokeObjectURL(backPreview); }, [frontPreview, backPreview]);
 
-  const chooseImage = (side: "front" | "back", file: File | null) => {
-    if (side === "front") setFrontFile(file); else setBackFile(file);
+  const chooseImage = async (side: "front" | "back", file: File | null) => {
+    const requestId = ++imageProcessingId.current[side];
+    const setFile = side === "front" ? setFrontFile : setBackFile;
+    const setPreview = side === "front" ? setFrontPreview : setBackPreview;
+    const setAnalysis = side === "front" ? setFrontAnalysis : setBackAnalysis;
+    const setProcessing = side === "front" ? setFrontProcessing : setBackProcessing;
+    setFile(null);
+    setAnalysis(null);
     setMessage("");
     setAutofillMessage("");
     setAutofillResult(null); setSales(null); setSalesError(""); setImageLookup(null); setSelectedDisplayImage(null); setEstimateSource("");
-    const setPreview = side === "front" ? setFrontPreview : setBackPreview;
+    if (!file) {
+      setProcessing(false);
+      setPreview((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return null;
+      });
+      return;
+    }
+    setProcessing(true);
+    const rawPreview = URL.createObjectURL(file);
     setPreview((current) => {
       if (current) URL.revokeObjectURL(current);
-      return file ? URL.createObjectURL(file) : null;
+      return rawPreview;
     });
+    const analysis = await analyzeCardImage(file);
+    const formatted = await formatCardImage(file, analysis);
+    if (imageProcessingId.current[side] !== requestId) {
+      URL.revokeObjectURL(formatted.previewUrl);
+      return;
+    }
+    setAnalysis(analysis);
+    setFile(formatted.file);
+    setPreview((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return formatted.previewUrl;
+    });
+    setProcessing(false);
   };
 
   function handleCollectionCreated(collection: CollectionSummary) {
@@ -105,7 +140,11 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
   }
 
   function stepError(step: number) {
-    if (step === 0) return validateRequiredCardImage(frontFile) || validateOptionalCardImage(backFile);
+    if (step === 0) {
+      if (frontProcessing || backProcessing) return "ARCA is preparing your image. Please wait a moment.";
+      if (frontAnalysis?.multipleCards || backAnalysis?.multipleCards) return "We detected more than one card. Please photograph one card at a time.";
+      return validateRequiredCardImage(frontFile) || validateOptionalCardImage(backFile);
+    }
     if (step === 1) return validateCardIdentity(form);
     if (step === 2) return validateCardGrading(form);
     if (step === 3) {
@@ -285,6 +324,18 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
 
   const selectedCollection = collections.find((collection) => collection.id === selectedCollectionId);
   const displayValue = form.estimatedValue.replace(/[$,]/g, "").trim();
+  const imageProcessing = frontProcessing || backProcessing;
+
+  function analysisNotice(label: string, analysis: CardDetectionAnalysis | null, processing: boolean) {
+    if (processing) return <p className="mt-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text-secondary)]">Preparing {label.toLowerCase()} for 3D preview…</p>;
+    if (!analysis) return null;
+    const hasWarning = analysis.multipleCards || analysis.quality.issues.length > 0 || analysis.source === "fallback";
+    const detectedLabel = analysis.multipleCards ? "Multiple cards" : analysis.boundary?.type === "graded-slab" ? "Graded slab" : "Raw card";
+    return <div className={`mt-3 rounded-lg border px-4 py-3 text-sm leading-6 ${hasWarning ? "border-[var(--status-warning)] bg-[var(--status-warning-bg)] text-[var(--status-warning)]" : "border-[var(--status-success)] bg-[var(--status-success-bg)] text-[var(--status-success)]"}`}>
+      <p className="font-semibold">{label}: {detectedLabel} · {Math.round(analysis.confidence * 100)}% confidence</p>
+      <ul className="mt-2 list-disc space-y-1 pl-5">{analysis.feedback.map((item) => <li key={item}>{item}</li>)}</ul>
+    </div>;
+  }
 
   return <main className="page-container cinematic-enter"><div className="detail-container">
     <PageHeader backHref="/collections" backLabel="Vault"/>
@@ -304,7 +355,7 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
       <section aria-labelledby="add-card-step-title" className="min-w-0 space-y-6">
         <h2 id="add-card-step-title" ref={stepHeadingRef} tabIndex={-1} className="sr-only">{steps[currentStep]}</h2>
 
-        {currentStep === 0 && <Panel className="space-y-8 p-5 md:p-7"><div><p className="eyebrow">Capture images</p><h3 className="heading-2 mt-2">Photograph the card</h3><p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">Use the rear camera or select clear images from your library.</p></div><div><h4 className="heading-3">Front Image</h4><p className="mt-2 text-sm text-[var(--text-secondary)]">Required · use the clearest view of the card front.</p><div className="mt-4"><ImageUpload label="Front Image" previewUrl={frontPreview} fileName={frontFile?.name} onChange={(file) => chooseImage("front", file)} aspect="card" cameraCapture hidePreviewOnDesktop/></div></div><div className="border-t border-[var(--border-subtle)] pt-7"><h4 className="heading-3">Back Image</h4><p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">Add back image for better autofill accuracy and full card view.</p><div className="mt-4"><ImageUpload label="Back Image" previewUrl={backPreview} fileName={backFile?.name} onChange={(file) => chooseImage("back", file)} aspect="card" cameraCapture hidePreviewOnDesktop helper="Optional · JPG, PNG or WebP · 10 MB maximum"/></div></div></Panel>}
+        {currentStep === 0 && <Panel className="space-y-8 p-5 md:p-7"><div><p className="eyebrow">Capture images</p><h3 className="heading-2 mt-2">Photograph the card</h3><p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">Use the rear camera or select clear images from your library. ARCA will detect the card boundary, format the image, and prepare it for premium 3D rendering.</p></div><div><h4 className="heading-3">Front Image</h4><p className="mt-2 text-sm text-[var(--text-secondary)]">Required · use the clearest view of the card front.</p><div className="mt-4"><ImageUpload label="Front Image" previewUrl={frontPreview} fileName={frontFile?.name} onChange={(file) => { void chooseImage("front", file); }} aspect="card" cameraCapture hidePreviewOnDesktop/></div>{analysisNotice("Front image", frontAnalysis, frontProcessing)}</div><div className="border-t border-[var(--border-subtle)] pt-7"><h4 className="heading-3">Back Image</h4><p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">Add back image for better autofill accuracy and full card view.</p><div className="mt-4"><ImageUpload label="Back Image" previewUrl={backPreview} fileName={backFile?.name} onChange={(file) => { void chooseImage("back", file); }} aspect="card" cameraCapture hidePreviewOnDesktop helper="Optional · JPG, PNG or WebP · 10 MB maximum"/></div>{analysisNotice("Back image", backAnalysis, backProcessing)}</div></Panel>}
 
         {currentStep === 1 && <><Panel variant="featured" className="space-y-4 p-5 md:p-6"><div><p className="eyebrow">Optional assistant</p><h3 className="heading-3 mt-2">Autofill card information</h3><p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">ARCA can inspect the front{backFile ? " and back" : ""} and suggest catalogue details. Nothing is locked—review and correct every field.</p></div><Button variant="outline" onClick={runAutofill} disabled={!frontFile || autofilling}>{autofilling ? "Scanning card…" : "Autofill Card Info"}</Button>{autofillMessage && <Message tone={autofillResult ? "success" : undefined}>{autofillMessage}</Message>}</Panel><CardFields value={form} onChange={setForm} disabled={saving} sections={["identity"]}/></>}
 
@@ -319,7 +370,7 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
         {message && <Message>{message}</Message>}
         <div className="sticky bottom-24 z-20 flex gap-3 rounded-xl border border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--background)_88%,transparent)] p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] backdrop-blur-xl lg:bottom-5">
           {currentStep > 0 && <Button variant="secondary" size="lg" className="min-w-24" disabled={saving} onClick={() => moveToStep(currentStep - 1)}>Back</Button>}
-          {currentStep < steps.length - 1 ? <Button size="lg" className="flex-1" disabled={saving} onClick={continueFlow}>Continue</Button> : <Button size="lg" className="flex-1" disabled={saving || collectionsLoading || Boolean(collectionError)} onClick={addCard}>{saving ? "Cataloguing…" : "Save card"}</Button>}
+          {currentStep < steps.length - 1 ? <Button size="lg" className="flex-1" disabled={saving || imageProcessing} onClick={continueFlow}>Continue</Button> : <Button size="lg" className="flex-1" disabled={saving || collectionsLoading || Boolean(collectionError)} onClick={addCard}>{saving ? "Cataloguing…" : "Save card"}</Button>}
         </div>
       </section>
     </div>
