@@ -1,66 +1,19 @@
 "use client";
 
-import { type FormEvent, useEffect, useState, useSyncExternalStore } from "react";
+import Image from "next/image";
+import { type FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import { ensureProfile } from "@/lib/auth-profile";
+import { getAuthCallbackUrl } from "@/lib/auth-url";
 import { Field, Input } from "@/components/ui/Form";
-import { EyeIcon, SparkIcon } from "@/components/ui/Icons";
+import { EyeIcon } from "@/components/ui/Icons";
 import { Message } from "@/components/ui/Surface";
 import ThemeToggle from "@/components/theme/ThemeToggle";
+import AuthMarketingCarousel from "@/components/auth/AuthMarketingCarousel";
 
 type AuthMode = "login" | "signup";
-const AUTH_BUILD_MARKER = "mobile-auth-2026-06-21.4";
-
-function collectorName(user: User, preferredName = "") {
-  const metadataName =
-    typeof user.user_metadata?.username === "string"
-      ? user.user_metadata.username
-      : typeof user.user_metadata?.display_name === "string"
-        ? user.user_metadata.display_name
-        : "";
-
-  return (
-    preferredName.trim() ||
-    metadataName.trim() ||
-    user.email?.split("@")[0] ||
-    "collector"
-  );
-}
-
-async function ensureProfile(user: User, preferredName = "") {
-  const { data: existing, error: readError } = await supabase
-    .from("profiles")
-    .select("id")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (readError) throw readError;
-  if (existing) return;
-
-  const name = collectorName(user, preferredName);
-
-  const { error: insertError } = await supabase.from("profiles").insert({
-    id: user.id,
-    username: name,
-    display_name: name,
-    rank: "I",
-  });
-
-  if (!insertError) return;
-  if (insertError.code !== "23505") throw insertError;
-
-  const uniqueName = `${name}-${user.id.slice(0, 6)}`;
-
-  const { error: retryError } = await supabase.from("profiles").insert({
-    id: user.id,
-    username: uniqueName,
-    display_name: name,
-    rank: "I",
-  });
-
-  if (retryError) throw retryError;
-}
+const AUTH_BUILD_MARKER = "MOBILE-AUTH · ARCA · JS READY";
 
 export default function AuthPage() {
   const router = useRouter();
@@ -73,12 +26,6 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(false);
-  const hydrated = useSyncExternalStore(
-    () => () => undefined,
-    () => true,
-    () => false
-  );
-
   useEffect(() => {
     let active = true;
 
@@ -168,7 +115,7 @@ export default function AuthPage() {
             username: normalizedUsername,
             display_name: normalizedUsername,
           },
-          emailRedirectTo: `${window.location.origin}/auth`,
+          emailRedirectTo: getAuthCallbackUrl(),
         },
       });
 
@@ -194,52 +141,29 @@ export default function AuthPage() {
   }
 
   return (
-    <main className="relative min-h-[100dvh] overflow-x-hidden bg-[var(--background)] text-[var(--text-primary)] lg:grid lg:grid-cols-[1.1fr_.9fr]">
-      <section className="relative hidden min-h-[100dvh] overflow-hidden border-r border-[var(--border-subtle)] bg-black p-14 text-white lg:flex lg:flex-col lg:justify-between">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_25%_20%,var(--auth-glow-one)_0,transparent_35%),radial-gradient(circle_at_80%_75%,var(--auth-glow-two)_0,transparent_40%)] opacity-80" />
+    <main className="relative min-h-[100dvh] overflow-x-hidden bg-[#050504] p-3 text-[var(--text-primary)] sm:p-5 lg:p-6">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_10%,rgba(201,164,93,.11),transparent_30%),radial-gradient(circle_at_88%_85%,rgba(138,103,51,.08),transparent_28%)]" />
+      <div className="relative z-10 mx-auto grid max-w-[1500px] gap-3 sm:gap-5 lg:min-h-[calc(100dvh-3rem)] lg:grid-cols-[minmax(0,1.18fr)_minmax(420px,.82fr)]">
+        <AuthMarketingCarousel />
 
-        <div className="relative z-10">
-          <p className="wordmark">ARCA</p>
-        </div>
+        <section className="relative z-20 flex min-h-[42rem] items-start justify-center overflow-y-auto rounded-[1.5rem] border border-[var(--border-subtle)] bg-[var(--surface-elevated)] px-5 pb-[calc(2.5rem+env(safe-area-inset-bottom))] pt-[calc(1.5rem+env(safe-area-inset-top))] shadow-[var(--shadow)] sm:px-10 lg:items-center lg:px-12 lg:py-12">
+          <div className="cinematic-enter relative z-20 w-full max-w-md">
+            <div className="flex items-center justify-between">
+              <div className="relative h-16 w-12"><Image src="/arcalogo/arca.arch.png" alt="ARCA arch emblem" fill sizes="48px" className="object-contain" /></div>
+              <ThemeToggle compact />
+            </div>
 
-        <div className="relative z-10 max-w-2xl">
-          <SparkIcon className="h-8 w-8 text-[var(--gold-highlight)]" />
-
-          <h1 className="display-xl mt-7 text-white">
-            Every collection
-            <br />
-            has a story.
-          </h1>
-
-          <p className="mt-7 max-w-lg text-base leading-8 text-white/60">
-            A private digital archive for the cards, memories, and provenance
-            worth preserving.
-          </p>
-        </div>
-
-        <p className="relative z-10 text-[10px] uppercase tracking-[0.18em] text-white/40">
-          Private collection platform
-        </p>
-      </section>
-
-      <section className="relative z-10 flex min-h-[100dvh] items-start justify-center overflow-y-auto px-5 pb-[calc(2.5rem+env(safe-area-inset-bottom))] pt-[calc(2.5rem+env(safe-area-inset-top))] md:px-10 lg:items-center">
-        <div className="cinematic-enter relative z-10 w-full max-w-md">
-          <div className="flex items-center justify-between lg:justify-end">
-            <span className="wordmark lg:hidden">ARCA</span>
-            <ThemeToggle compact />
-          </div>
-
-          <div className="mt-12 sm:mt-16 lg:mt-0">
+            <div className="mt-9">
             <p className="eyebrow">Private access</p>
 
             <h2 className="display-l mt-3">
-              {mode === "login" ? "Welcome back" : "Begin your archive"}
+              {mode === "login" ? "Welcome back" : "Create your vault"}
             </h2>
 
             <p className="mt-4 text-sm leading-6 text-[var(--text-secondary)]">
               {mode === "login"
                 ? "Enter the vault and continue your collection."
-                : "Create your collector profile and preserve your first story."}
+                : "Create your account and begin building your digital collection."}
             </p>
           </div>
 
@@ -353,7 +277,7 @@ export default function AuthPage() {
                       ? "Opening the vault…"
                       : mode === "login"
                         ? "Enter ARCA"
-                        : "Create collector account"}
+                        : "Create Account"}
                   </button>
                 </div>
               </div>
@@ -362,11 +286,12 @@ export default function AuthPage() {
               className="mt-5 text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-tertiary)]"
               data-auth-debug
             >
-              {AUTH_BUILD_MARKER} · {hydrated ? "JS ready" : "HTML loaded"}
+              {AUTH_BUILD_MARKER}
             </p>
           </form>
-        </div>
-      </section>
+          </div>
+        </section>
+      </div>
     </main>
   );
 }
