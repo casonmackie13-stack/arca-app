@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { HomeIcon, PlusIcon, SearchIcon, UserIcon, VaultIcon } from "@/components/ui/Icons";
+import { HomeIcon, PlusIcon, SparkIcon, UserIcon, VaultIcon } from "@/components/ui/Icons";
 import ThemeToggle from "@/components/theme/ThemeToggle";
 
 const items = [
   { href: "/", label: "Home", icon: HomeIcon, match: (path: string) => path === "/" },
   { href: "/collections", label: "Vault", icon: VaultIcon, match: (path: string) => path.startsWith("/collections") || path.startsWith("/cards") },
-  { href: "/search", label: "Discover", icon: SearchIcon, match: (path: string) => path.startsWith("/search") },
+  { href: "/explore", label: "Explore", icon: SparkIcon, match: (path: string) => path.startsWith("/explore") || path.startsWith("/users") },
   { href: "/profile", label: "Profile", icon: UserIcon, match: (path: string) => path.startsWith("/profile") },
 ];
 

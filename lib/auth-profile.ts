@@ -1,5 +1,6 @@
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import { normalizeUsername } from "@/lib/username";
 
 function collectorName(user: User, preferredName = "") {
   const metadataName =
@@ -23,9 +24,10 @@ export async function ensureProfile(user: User, preferredName = "") {
   if (existing) return;
 
   const name = collectorName(user, preferredName);
+  const username = normalizeUsername(name).replace(/[^a-z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "") || `collector_${user.id.slice(0, 6)}`;
   const { error: insertError } = await supabase.from("profiles").insert({
     id: user.id,
-    username: name,
+    username,
     display_name: name,
     rank: "I",
   });
@@ -35,7 +37,7 @@ export async function ensureProfile(user: User, preferredName = "") {
 
   const { error: retryError } = await supabase.from("profiles").insert({
     id: user.id,
-    username: `${name}-${user.id.slice(0, 6)}`,
+    username: `${username}_${user.id.slice(0, 6)}`,
     display_name: name,
     rank: "I",
   });

@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 
 export default function NewCollectionPage() {
   const router = useRouter();
-  const [value, setValue] = useState<CollectionFormValue>({ name: "", description: "", category: "Basketball", visibility: "private" });
+  const [value, setValue] = useState<CollectionFormValue>({ name: "", description: "", category: "Basketball", visibility: "public" });
   const [cover, setCover] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
