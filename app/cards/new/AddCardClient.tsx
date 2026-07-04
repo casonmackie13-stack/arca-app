@@ -34,8 +34,9 @@ import { salePrice } from "@/lib/card-sales";
 import { analyzeCardImage, type CardDetectionAnalysis } from "@/lib/image-processing/cardDetection";
 import { formatCardImage } from "@/lib/image-processing/cardFormatting";
 import type { ScanType } from "@/components/scanner/scanTypes";
-import type { GuidedCaptureResult, OcrResult, ScanMetadata } from "@/lib/scanner/scanMetadata";
+import { buildRecognitionPayload } from "@/lib/scanner/recognitionPreview";
 import { runLocalOCR } from "@/lib/scanner/ocr";
+import type { GuidedCaptureResult, OcrResult, ScanMetadata } from "@/lib/scanner/scanMetadata";
 
 const steps = ["Capture image", "Card details", "Condition", "Collection", "Value", "Review & save"] as const;
 
@@ -136,7 +137,7 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
     }
   }
 
-  const chooseImage = async (side: "front" | "back", file: File | null, options?: { guidedScanType?: ScanType; scanMetadata?: ScanMetadata }) => {
+  const chooseImage = async (side: "front" | "back", file: File | null, options?: { guidedScanType?: ScanType; scanMetadata?: ScanMetadata; ocrText?: string }) => {
     const requestId = ++imageProcessingId.current[side];
     const setFile = side === "front" ? setFrontFile : setBackFile;
     const setPreview = side === "front" ? setFrontPreview : setBackPreview;
@@ -184,7 +185,13 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
     if (options?.scanMetadata) {
       if (side === "front") setFrontScanMetadata(options.scanMetadata);
       else setBackScanMetadata(options.scanMetadata);
-      void runSideOcr(side, formatted.file);
+      if (options.ocrText?.trim()) {
+        const ocr: OcrResult = { text: options.ocrText.trim() };
+        if (side === "front") setFrontOcr(ocr);
+        else setBackOcr(ocr);
+      } else {
+        void runSideOcr(side, formatted.file);
+      }
     }
   };
 
@@ -233,8 +240,8 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
         frontOcrText: frontOcr?.text,
         backOcrText: backOcr?.text,
         scanMetadata: {
-          front: frontScanMetadata,
-          back: backScanMetadata,
+          front: frontScanMetadata ? buildRecognitionPayload(frontScanMetadata, frontOcr?.text) : undefined,
+          back: backScanMetadata ? buildRecognitionPayload(backScanMetadata, backOcr?.text) : undefined,
         },
       });
       setAutofillResult(result);
@@ -456,6 +463,7 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
         void chooseImage(side, result.file, {
           guidedScanType: result.scanType,
           scanMetadata: result.metadata,
+          ocrText: result.ocrText,
         });
         setScannerSide(null);
       }}

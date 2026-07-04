@@ -1,9 +1,13 @@
 "use client";
 
+/**
+ * ARCA Scan Engine v1 — card/slab vision pipeline (OpenCV.js when available).
+ * Optimized for sports cards, slabs, glare, and listing-ready output.
+ */
 import type { ScanType } from "@/components/scanner/scanTypes";
 import { scanTypeConfig } from "@/components/scanner/scanTypes";
 import { loadOpenCv, type OpenCvMat, type OpenCvMatVector } from "@/lib/scanner/opencvLoader";
-import type { CardEdgeDetection, ScanPoint, ScanQualityMetrics } from "@/lib/scanner/scanMetadata";
+import type { Point, ScanDetectionResult, ScanQualityMetrics } from "@/lib/scanner/scanMetadata";
 
 export type EnhancementLevel = "natural" | "strong";
 
@@ -14,7 +18,7 @@ function targetAspect(scanType: ScanType) {
   return scanTypeConfig[scanType].aspectRatio;
 }
 
-function distance(a: ScanPoint, b: ScanPoint) {
+function distance(a: Point, b: Point) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
@@ -31,7 +35,7 @@ function normalizeQuality(partial: Partial<ScanQualityMetrics>): ScanQualityMetr
 }
 
 /** Order corners: top-left, top-right, bottom-right, bottom-left. */
-export function orderCorners(points: ScanPoint[]): ScanPoint[] {
+export function orderCorners(points: Point[]): Point[] {
   if (points.length !== 4) return points;
   const sorted = [...points].sort((a, b) => a.y - b.y);
   const top = sorted.slice(0, 2).sort((a, b) => a.x - b.x);
@@ -39,7 +43,7 @@ export function orderCorners(points: ScanPoint[]): ScanPoint[] {
   return [top[0], top[1], bottom[1], bottom[0]];
 }
 
-function contourAspect(corners: ScanPoint[]) {
+function contourAspect(corners: Point[]) {
   const ordered = orderCorners(corners);
   const widthTop = distance(ordered[0], ordered[1]);
   const widthBottom = distance(ordered[3], ordered[2]);
@@ -51,7 +55,7 @@ function contourAspect(corners: ScanPoint[]) {
   return width / height;
 }
 
-function tiltFromCorners(corners: ScanPoint[]) {
+function tiltFromCorners(corners: Point[]) {
   const ordered = orderCorners(corners);
   const topAngle = Math.atan2(ordered[1].y - ordered[0].y, ordered[1].x - ordered[0].x);
   const leftAngle = Math.atan2(ordered[3].y - ordered[0].y, ordered[3].x - ordered[0].x);
@@ -71,7 +75,7 @@ function readSourceCanvas(source: HTMLVideoElement | HTMLCanvasElement): HTMLCan
 }
 
 export function scoreCandidateContour(
-  corners: ScanPoint[],
+  corners: Point[],
   scanType: ScanType,
   frameSize: { width: number; height: number },
   area: number,
@@ -92,8 +96,8 @@ export function scoreCandidateContour(
 
 export function calculateQualityMetrics(
   canvas: HTMLCanvasElement,
-  corners?: ScanPoint[],
-  previousCorners?: ScanPoint[],
+  corners?: Point[],
+  previousCorners?: Point[],
 ): ScanQualityMetrics {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) {
@@ -155,7 +159,7 @@ export function calculateQualityMetrics(
 }
 
 export function isReadyForAutoCapture(
-  detection: CardEdgeDetection,
+  detection: ScanDetectionResult,
   stableMs: number,
   options?: { minConfidence?: number; minStableMs?: number },
 ): boolean {
@@ -163,7 +167,7 @@ export function isReadyForAutoCapture(
 }
 
 export function shouldAutoCapture(
-  detection: CardEdgeDetection,
+  detection: ScanDetectionResult,
   stableMs: number,
   options?: { minConfidence?: number; minStableMs?: number },
 ): boolean {
@@ -181,7 +185,7 @@ export function shouldAutoCapture(
   return true;
 }
 
-function emptyDetection(message: string, quality?: ScanQualityMetrics): CardEdgeDetection {
+function emptyDetection(message: string, quality?: ScanQualityMetrics): ScanDetectionResult {
   return {
     found: false,
     confidence: 0,
@@ -193,9 +197,9 @@ function emptyDetection(message: string, quality?: ScanQualityMetrics): CardEdge
 export async function detectCardEdges(
   source: HTMLVideoElement | HTMLCanvasElement,
   scanType: ScanType,
-  previousCorners?: ScanPoint[],
+  previousCorners?: Point[],
   options?: { force?: boolean },
-): Promise<CardEdgeDetection> {
+): Promise<ScanDetectionResult> {
   const now = performance.now();
   if (!options?.force && now - lastDetectionAt < DETECTION_INTERVAL_MS) {
     return emptyDetection("throttled");
@@ -234,7 +238,7 @@ export async function detectCardEdges(
 
     const frameSize = { width: canvas.width, height: canvas.height };
     const frameArea = frameSize.width * frameSize.height;
-    let best: { corners: ScanPoint[]; score: number } | null = null;
+    let best: { corners: Point[]; score: number } | null = null;
 
     for (let i = 0; i < contours.size(); i += 1) {
       const contour = contours.get(i);
@@ -249,7 +253,7 @@ export async function detectCardEdges(
       cv.approxPolyDP(contour, approx, epsilon, true);
 
       if (approx.rows === 4) {
-        const corners: ScanPoint[] = [];
+        const corners: Point[] = [];
         for (let row = 0; row < 4; row += 1) {
           corners.push({ x: approx.data32S[row * 2], y: approx.data32S[row * 2 + 1] });
         }
@@ -282,9 +286,18 @@ export async function detectCardEdges(
   }
 }
 
+export async function detectCardEdgesFromCanvas(
+  sourceCanvas: HTMLCanvasElement,
+  scanType: ScanType,
+  previousCorners?: Point[],
+  options?: { force?: boolean },
+): Promise<ScanDetectionResult> {
+  return detectCardEdges(sourceCanvas, scanType, previousCorners, options);
+}
+
 export async function perspectiveCorrect(
   sourceCanvas: HTMLCanvasElement,
-  corners: ScanPoint[],
+  corners: Point[],
   outputWidth: number,
   outputHeight: number,
 ): Promise<HTMLCanvasElement> {

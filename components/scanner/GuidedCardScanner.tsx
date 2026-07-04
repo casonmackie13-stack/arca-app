@@ -10,7 +10,7 @@ import { processGuidedCapture, redetectForCapture } from "@/lib/scanner/captureP
 import { mapCornersToDisplay, type VideoDisplayMetrics } from "@/lib/scanner/displayMapping";
 import { terminateOcrWorker } from "@/lib/scanner/ocr";
 import { resolveScannerMessage } from "@/lib/scanner/scannerMessages";
-import type { GuidedCaptureResult } from "@/lib/scanner/scanMetadata";
+import type { GuidedCaptureResult, ScanDetectionResult, ScanRecognitionPreview } from "@/lib/scanner/scanMetadata";
 import { useLiveDetection } from "@/lib/scanner/useLiveDetection";
 
 type ScannerPhase = "camera" | "preview";
@@ -38,7 +38,7 @@ export default function GuidedCardScanner({
   const streamRef = useRef<MediaStream | null>(null);
   const autoCapturedRef = useRef(false);
   const runCaptureRef = useRef<(mode: "auto" | "manual") => Promise<GuidedCaptureResult | null>>(async () => null);
-  const detectionRef = useRef<import("@/lib/scanner/scanMetadata").CardEdgeDetection | null>(null);
+  const detectionRef = useRef<ScanDetectionResult | null>(null);
 
   const [phase, setPhase] = useState<ScannerPhase>("camera");
   const [scanType, setScanType] = useState<ScanType>("raw");
@@ -209,9 +209,16 @@ export default function GuidedCardScanner({
     setPhase("camera");
   }
 
-  function useCapture() {
+  function useCapture(extras?: { ocrText?: string; recognition?: ScanRecognitionPreview }) {
     if (!capturedResult) return;
-    onCapture(capturedResult);
+    onCapture({
+      ...capturedResult,
+      ocrText: extras?.ocrText,
+      metadata: {
+        ...capturedResult.metadata,
+        recognition: extras?.recognition ?? capturedResult.metadata.recognition,
+      },
+    });
     closeScanner();
   }
 
@@ -230,7 +237,7 @@ export default function GuidedCardScanner({
       <div className="absolute inset-x-0 top-0 flex items-center justify-between px-4 pb-6 pt-[max(1rem,env(safe-area-inset-top))]">
         <button type="button" onClick={closeScanner} aria-label="Close scanner" className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-xl font-light backdrop-blur">×</button>
         <div className="text-center">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--gold-primary)]">Scan {side}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--gold-primary)]">ARCA Scan · {side}</p>
           <p className="mt-1 text-sm font-semibold">{scanTypeConfig[scanType].title}</p>
         </div>
         <div className="h-11 w-11" aria-hidden />
@@ -312,6 +319,7 @@ export default function GuidedCardScanner({
         previewUrl={previewUrl}
         scanType={scanType}
         metadata={capturedResult.metadata}
+        file={capturedResult.file}
         onRetake={retake}
         onUse={useCapture}
       />

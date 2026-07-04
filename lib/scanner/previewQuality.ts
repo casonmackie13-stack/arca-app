@@ -9,6 +9,7 @@ export function previewQualityWarnings(metadata?: ScanMetadata): string[] {
     warnings.push("Card edges were not fully detected");
   }
   if (quality) {
+    if (quality.fillRatio < 0.15) warnings.push("Move closer — card fills too little of the frame");
     if (quality.blurScore < 0.32) warnings.push("Image may be blurry");
     if (quality.brightnessScore < 0.2) warnings.push("Low light");
     if ((quality.glareScore ?? 0) > 0.18) warnings.push("Glare detected");

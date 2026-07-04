@@ -1,6 +1,11 @@
 import type { ScanType } from "@/components/scanner/scanTypes";
 
-export type ScanPoint = { x: number; y: number };
+/** ARCA Scan Engine v1 — shared geometry & quality types */
+
+export type Point = { x: number; y: number };
+
+/** @deprecated alias — use Point */
+export type ScanPoint = Point;
 
 export type ScanQualityMetrics = {
   blurScore: number;
@@ -12,12 +17,23 @@ export type ScanQualityMetrics = {
   stabilityScore: number;
 };
 
-export type CardEdgeDetection = {
+export type ScanDetectionResult = {
   found: boolean;
-  corners?: ScanPoint[];
+  corners?: Point[];
   confidence: number;
   message?: string;
   quality: ScanQualityMetrics;
+};
+
+/** @deprecated alias — use ScanDetectionResult */
+export type CardEdgeDetection = ScanDetectionResult;
+
+export type ScanRecognitionPreview = {
+  available: boolean;
+  detectedLabel?: string;
+  confidence?: number;
+  warnings?: string[];
+  multipleCards?: boolean;
 };
 
 export type ScanMetadata = {
@@ -28,9 +44,11 @@ export type ScanMetadata = {
   fallbackCrop?: boolean;
   edgeConfidence?: number;
   quality?: ScanQualityMetrics;
+  /** Prepared for future live recognition; v1 uses post-capture preview only */
+  recognition?: ScanRecognitionPreview;
 };
 
-/** @deprecated Use ScanMetadata — kept for Add Card pipeline compatibility */
+/** @deprecated Use ScanMetadata */
 export type ScanCaptureMetadata = ScanMetadata & {
   overlayCropSucceeded?: boolean;
 };
@@ -39,6 +57,8 @@ export type GuidedCaptureResult = {
   file: File;
   scanType: ScanType;
   metadata: ScanMetadata;
+  /** Populated when preview-screen OCR finishes before Use */
+  ocrText?: string;
 };
 
 export type ScannerMessage =
@@ -65,4 +85,14 @@ export type SideOcrState = {
   loading: boolean;
   result: OcrResult | null;
   error?: string;
+};
+
+export type ScanRecognitionPayload = {
+  scanType: ScanType;
+  captureMode: "auto" | "manual";
+  edgeDetected: boolean;
+  perspectiveCorrected: boolean;
+  edgeConfidence?: number;
+  quality?: ScanQualityMetrics;
+  ocrText?: string;
 };
