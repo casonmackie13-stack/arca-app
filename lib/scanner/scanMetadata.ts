@@ -8,36 +8,47 @@ export type ScanQualityMetrics = {
   glareScore?: number;
   shadowScore?: number;
   tiltScore?: number;
-  fillRatio?: number;
-  stabilityScore?: number;
+  fillRatio: number;
+  stabilityScore: number;
 };
 
 export type CardEdgeDetection = {
   found: boolean;
   corners?: ScanPoint[];
   confidence: number;
-  reason?: string;
-  metrics: ScanQualityMetrics;
+  message?: string;
+  quality: ScanQualityMetrics;
 };
 
-export type ScanCaptureMode = "edge-detected" | "guide-frame" | "full-frame";
-
-export type ScanCaptureMetadata = {
-  captureMode: ScanCaptureMode;
-  perspectiveCorrected: boolean;
-  overlayCropSucceeded: boolean;
-  edgeConfidence?: number;
-  qualityMetrics?: ScanQualityMetrics;
+export type ScanMetadata = {
   scanType: ScanType;
+  captureMode: "auto" | "manual";
+  edgeDetected: boolean;
+  perspectiveCorrected: boolean;
+  fallbackCrop?: boolean;
+  edgeConfidence?: number;
+  quality?: ScanQualityMetrics;
+};
+
+/** @deprecated Use ScanMetadata — kept for Add Card pipeline compatibility */
+export type ScanCaptureMetadata = ScanMetadata & {
+  overlayCropSucceeded?: boolean;
 };
 
 export type GuidedCaptureResult = {
   file: File;
   scanType: ScanType;
-  metadata: ScanCaptureMetadata;
+  metadata: ScanMetadata;
 };
 
-export type ScanUiState = "searching" | "unstable" | "quality-issue" | "ready";
+export type ScannerMessage =
+  | "find-edges"
+  | "move-closer"
+  | "hold-steady"
+  | "too-blurry"
+  | "more-light"
+  | "ready"
+  | "capturing";
 
 export type OcrWord = {
   text: string;

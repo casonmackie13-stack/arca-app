@@ -34,7 +34,7 @@ import { salePrice } from "@/lib/card-sales";
 import { analyzeCardImage, type CardDetectionAnalysis } from "@/lib/image-processing/cardDetection";
 import { formatCardImage } from "@/lib/image-processing/cardFormatting";
 import type { ScanType } from "@/components/scanner/scanTypes";
-import type { GuidedCaptureResult, OcrResult, ScanCaptureMetadata } from "@/lib/scanner/scanMetadata";
+import type { GuidedCaptureResult, OcrResult, ScanMetadata } from "@/lib/scanner/scanMetadata";
 import { runLocalOCR } from "@/lib/scanner/ocr";
 
 const steps = ["Capture image", "Card details", "Condition", "Collection", "Value", "Review & save"] as const;
@@ -63,8 +63,8 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
   const [backOcr, setBackOcr] = useState<OcrResult | null>(null);
   const [frontOcrLoading, setFrontOcrLoading] = useState(false);
   const [backOcrLoading, setBackOcrLoading] = useState(false);
-  const [frontScanMetadata, setFrontScanMetadata] = useState<ScanCaptureMetadata | null>(null);
-  const [backScanMetadata, setBackScanMetadata] = useState<ScanCaptureMetadata | null>(null);
+  const [frontScanMetadata, setFrontScanMetadata] = useState<ScanMetadata | null>(null);
+  const [backScanMetadata, setBackScanMetadata] = useState<ScanMetadata | null>(null);
   const [saving, setSaving] = useState(false);
   const [autofilling, setAutofilling] = useState(false);
   const [autofillMessage, setAutofillMessage] = useState("");
@@ -107,18 +107,18 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
   function scanTypeMismatch(scanType: ScanType, analysis: CardDetectionAnalysis) {
     if (analysis.source === "fallback" || analysis.multipleCards) return "";
     const detectedSlab = analysis.boundary?.type === "graded-slab";
-    if (scanType === "raw-card" && detectedSlab) return "This looks like a slab. Retake as a graded slab if the holder or label is being cut off.";
-    if (scanType === "graded-slab" && !detectedSlab && analysis.confidence >= 0.5) return "This looks like a raw card. Retake as a raw card if no slab is present.";
+    if (scanType === "raw" && detectedSlab) return "This looks like a slab. Switch to Graded and retake if the holder or label is being cut off.";
+    if (scanType === "graded" && !detectedSlab && analysis.confidence >= 0.5) return "This looks like a raw card. Switch to Raw and retake if no slab is present.";
     return "";
   }
 
-  function scanMetadataFeedback(metadata?: ScanCaptureMetadata) {
+  function scanMetadataFeedback(metadata?: ScanMetadata) {
     if (!metadata) return [] as string[];
     const notes: string[] = [];
     if (metadata.perspectiveCorrected) notes.push("Perspective corrected");
-    if (metadata.captureMode === "edge-detected") notes.push("Edges detected");
-    if (metadata.captureMode === "guide-frame") notes.push("Manual crop fallback used");
-    if (metadata.captureMode === "full-frame") notes.push("Full-frame fallback used");
+    if (metadata.edgeDetected) notes.push("Edges detected");
+    if (metadata.fallbackCrop) notes.push("Manual crop fallback used");
+    if (metadata.captureMode === "auto") notes.push("Auto-captured");
     return notes;
   }
 
@@ -136,7 +136,7 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
     }
   }
 
-  const chooseImage = async (side: "front" | "back", file: File | null, options?: { guidedScanType?: ScanType; scanMetadata?: ScanCaptureMetadata }) => {
+  const chooseImage = async (side: "front" | "back", file: File | null, options?: { guidedScanType?: ScanType; scanMetadata?: ScanMetadata }) => {
     const requestId = ++imageProcessingId.current[side];
     const setFile = side === "front" ? setFrontFile : setBackFile;
     const setPreview = side === "front" ? setFrontPreview : setBackPreview;
@@ -426,7 +426,7 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
       <section aria-labelledby="add-card-step-title" className="min-w-0 space-y-6">
         <h2 id="add-card-step-title" ref={stepHeadingRef} tabIndex={-1} className="sr-only">{steps[currentStep]}</h2>
 
-        {currentStep === 0 && <Panel className="space-y-8 p-5 md:p-7"><div><p className="eyebrow">Capture images</p><h3 className="heading-2 mt-2">Photograph the card</h3><p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">Use guided scan for edge detection, perspective correction, and quality feedback—or select clear images from your library.</p></div><div><h4 className="heading-3">Front Image</h4><p className="mt-2 text-sm text-[var(--text-secondary)]">Required · use the clearest view of the card front.</p><div className="mt-4 space-y-3"><Button variant="outline" className="w-full" onClick={() => setScannerSide("front")}>Scan front</Button><ImageUpload label="Front Image" previewUrl={frontPreview} fileName={frontFile?.name} onChange={(file) => { void chooseImage("front", file); }} aspect="card" cameraCapture hidePreviewOnDesktop/></div>{analysisNotice("Front image", frontAnalysis, frontProcessing)}{ocrNotice("front")}</div><div className="border-t border-[var(--border-subtle)] pt-7"><h4 className="heading-3">Back Image</h4><p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">Add back image for better autofill accuracy and full card view.</p><div className="mt-4 space-y-3"><Button variant="outline" className="w-full" onClick={() => setScannerSide("back")}>Scan back</Button><ImageUpload label="Back Image" previewUrl={backPreview} fileName={backFile?.name} onChange={(file) => { void chooseImage("back", file); }} aspect="card" cameraCapture hidePreviewOnDesktop helper="Optional · JPG, PNG or WebP · 10 MB maximum"/></div>{analysisNotice("Back image", backAnalysis, backProcessing)}{ocrNotice("back")}</div></Panel>}
+        {currentStep === 0 && <Panel className="space-y-8 p-5 md:p-7"><div><p className="eyebrow">Capture images</p><h3 className="heading-2 mt-2">Photograph the card</h3><p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">Tap Scan to open the camera instantly. Point at the card, hold steady, and ARCA captures automatically—or upload from your library.</p></div><div><h4 className="heading-3">Front Image</h4><p className="mt-2 text-sm text-[var(--text-secondary)]">Required · use the clearest view of the card front.</p><div className="mt-4 space-y-3"><Button variant="outline" className="w-full" onClick={() => setScannerSide("front")}>Scan front</Button><ImageUpload label="Front Image" previewUrl={frontPreview} fileName={frontFile?.name} onChange={(file) => { void chooseImage("front", file); }} aspect="card" cameraCapture hidePreviewOnDesktop/></div>{analysisNotice("Front image", frontAnalysis, frontProcessing)}{ocrNotice("front")}</div><div className="border-t border-[var(--border-subtle)] pt-7"><h4 className="heading-3">Back Image</h4><p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">Add back image for better autofill accuracy and full card view.</p><div className="mt-4 space-y-3"><Button variant="outline" className="w-full" onClick={() => setScannerSide("back")}>Scan back</Button><ImageUpload label="Back Image" previewUrl={backPreview} fileName={backFile?.name} onChange={(file) => { void chooseImage("back", file); }} aspect="card" cameraCapture hidePreviewOnDesktop helper="Optional · JPG, PNG or WebP · 10 MB maximum"/></div>{analysisNotice("Back image", backAnalysis, backProcessing)}{ocrNotice("back")}</div></Panel>}
 
         {currentStep === 1 && <><Panel variant="featured" className="space-y-4 p-5 md:p-6"><div><p className="eyebrow">Optional assistant</p><h3 className="heading-3 mt-2">Autofill card information</h3><p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">ARCA can inspect the front{backFile ? " and back" : ""} and suggest catalogue details. Nothing is locked—review and correct every field.</p></div><Button variant="outline" onClick={runAutofill} disabled={!frontFile || autofilling}>{autofilling ? "Scanning card…" : "Autofill Card Info"}</Button>{autofillMessage && <Message tone={autofillResult ? "success" : undefined}>{autofillMessage}</Message>}</Panel><CardFields value={form} onChange={setForm} disabled={saving} sections={["identity"]}/></>}
 
@@ -447,6 +447,7 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
     </div>
     <QuickCollectionDialog open={quickCreateOpen} onClose={() => setQuickCreateOpen(false)} onCreated={handleCollectionCreated}/>
     <GuidedCardScanner
+      key={scannerSide ?? "idle"}
       open={scannerOpen}
       side={scannerSide || "front"}
       onClose={() => setScannerSide(null)}

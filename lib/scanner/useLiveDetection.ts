@@ -2,21 +2,19 @@
 
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { ScanType } from "@/components/scanner/scanTypes";
-import { detectCardEdges, resolveScanUiState, shouldAutoCapture } from "@/lib/scanner/cardVision";
-import type { CardEdgeDetection, ScanPoint, ScanUiState } from "@/lib/scanner/scanMetadata";
+import { detectCardEdges, isReadyForAutoCapture } from "@/lib/scanner/cardVision";
+import type { CardEdgeDetection, ScanPoint } from "@/lib/scanner/scanMetadata";
 
 const TARGET_FPS = 10;
 const FRAME_INTERVAL_MS = 1000 / TARGET_FPS;
 
 export function useLiveDetection(
   videoRef: RefObject<HTMLVideoElement | null>,
-  scanType: ScanType | null,
+  scanType: ScanType,
   active: boolean,
 ) {
   const [detection, setDetection] = useState<CardEdgeDetection | null>(null);
-  const [scanState, setScanState] = useState<ScanUiState>("searching");
   const [stableMs, setStableMs] = useState(0);
-  const [opencvReady, setOpencvReady] = useState(false);
   const previousCornersRef = useRef<ScanPoint[] | undefined>(undefined);
   const stableSinceRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -24,7 +22,7 @@ export function useLiveDetection(
   const runningRef = useRef(false);
 
   useEffect(() => {
-    if (!active || !scanType) {
+    if (!active) {
       stableSinceRef.current = null;
       previousCornersRef.current = undefined;
       return;
@@ -48,29 +46,23 @@ export function useLiveDetection(
 
       runningRef.current = true;
       try {
-        const activeScanType = scanType;
-        if (!activeScanType) return;
-        const result = await detectCardEdges(video, activeScanType, previousCornersRef.current);
+        const result = await detectCardEdges(video, scanType, previousCornersRef.current);
         if (cancelled) return;
 
-        setOpencvReady(result.reason !== "OpenCV unavailable");
         setDetection(result);
         previousCornersRef.current = result.corners;
 
         const stableEnough = result.found
           && result.confidence >= 0.55
-          && (result.metrics.stabilityScore ?? 0) >= 0.65
-          && result.metrics.blurScore >= 0.28;
+          && result.quality.stabilityScore >= 0.65
+          && result.quality.blurScore >= 0.28;
 
         if (stableEnough) {
           if (stableSinceRef.current == null) stableSinceRef.current = now;
-          const elapsed = now - stableSinceRef.current;
-          setStableMs(elapsed);
-          setScanState(resolveScanUiState(result, elapsed));
+          setStableMs(now - stableSinceRef.current);
         } else {
           stableSinceRef.current = null;
           setStableMs(0);
-          setScanState(resolveScanUiState(result, 0));
         }
       } finally {
         runningRef.current = false;
@@ -89,9 +81,7 @@ export function useLiveDetection(
 
   return {
     detection,
-    scanState,
     stableMs,
-    opencvReady,
-    readyForAutoCapture: detection ? shouldAutoCapture(detection, stableMs) : false,
+    readyForAutoCapture: detection ? isReadyForAutoCapture(detection, stableMs) : false,
   };
 }

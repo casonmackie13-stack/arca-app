@@ -7,8 +7,10 @@ import {
   detectCardEdges,
   enhanceScan,
   perspectiveCorrect,
+  calculateQualityMetrics,
 } from "@/lib/scanner/cardVision";
-import type { CardEdgeDetection, GuidedCaptureResult, ScanCaptureMetadata, ScanPoint } from "@/lib/scanner/scanMetadata";
+import { assessCaptureQuality } from "@/lib/scanner/previewQuality";
+import type { CardEdgeDetection, GuidedCaptureResult, ScanMetadata, ScanPoint } from "@/lib/scanner/scanMetadata";
 
 const EDGE_CONFIDENCE_THRESHOLD = 0.55;
 
@@ -60,14 +62,15 @@ function cropGuideFrame(
 async function buildCaptureFromCanvas(
   canvas: HTMLCanvasElement,
   scanType: ScanType,
-  metadata: Omit<ScanCaptureMetadata, "scanType">,
+  metadata: Omit<ScanMetadata, "scanType">,
 ): Promise<GuidedCaptureResult> {
   const enhanced = await enhanceScan(canvas, "natural");
-  const file = await canvasToJpegFile(enhanced, scanType, metadata.captureMode === "edge-detected" ? "edge" : "guide");
+  const quality = assessCaptureQuality(enhanced);
+  const file = await canvasToJpegFile(enhanced, scanType, metadata.edgeDetected ? "edge" : "guide");
   return {
     file,
     scanType,
-    metadata: { ...metadata, scanType },
+    metadata: { ...metadata, scanType, quality: metadata.quality ?? quality },
   };
 }
 
@@ -75,9 +78,10 @@ export async function processGuidedCapture(options: {
   video: HTMLVideoElement;
   overlayElement: HTMLElement | null;
   scanType: ScanType;
+  captureMode: "auto" | "manual";
   liveDetection?: CardEdgeDetection | null;
 }): Promise<GuidedCaptureResult> {
-  const { video, overlayElement, scanType, liveDetection } = options;
+  const { video, overlayElement, scanType, captureMode, liveDetection } = options;
   const output = scanTypeConfig[scanType].output;
   const frame = captureVideoFrame(video);
 
@@ -88,12 +92,13 @@ export async function processGuidedCapture(options: {
   if (corners?.length === 4) {
     try {
       const corrected = await perspectiveCorrect(frame, corners, output.width, output.height);
+      const quality = calculateQualityMetrics(corrected, corners);
       return buildCaptureFromCanvas(corrected, scanType, {
-        captureMode: "edge-detected",
+        captureMode,
+        edgeDetected: true,
         perspectiveCorrected: true,
-        overlayCropSucceeded: true,
         edgeConfidence: liveDetection?.confidence,
-        qualityMetrics: liveDetection?.metrics,
+        quality,
       });
     } catch {
       // Fall through to guide-frame crop.
@@ -103,12 +108,14 @@ export async function processGuidedCapture(options: {
   if (overlayElement) {
     try {
       const cropped = cropGuideFrame(video, overlayElement.getBoundingClientRect(), output);
+      const quality = calculateQualityMetrics(cropped);
       return buildCaptureFromCanvas(cropped, scanType, {
-        captureMode: "guide-frame",
+        captureMode,
+        edgeDetected: false,
         perspectiveCorrected: false,
-        overlayCropSucceeded: true,
+        fallbackCrop: true,
         edgeConfidence: liveDetection?.confidence,
-        qualityMetrics: liveDetection?.metrics,
+        quality,
       });
     } catch {
       // Fall through to full frame.
@@ -119,12 +126,14 @@ export async function processGuidedCapture(options: {
   full.width = output.width;
   full.height = output.height;
   full.getContext("2d")?.drawImage(frame, 0, 0, output.width, output.height);
+  const quality = calculateQualityMetrics(full);
   return buildCaptureFromCanvas(full, scanType, {
-    captureMode: "full-frame",
+    captureMode,
+    edgeDetected: false,
     perspectiveCorrected: false,
-    overlayCropSucceeded: false,
+    fallbackCrop: true,
     edgeConfidence: liveDetection?.confidence,
-    qualityMetrics: liveDetection?.metrics,
+    quality,
   });
 }
 

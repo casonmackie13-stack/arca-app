@@ -11,12 +11,23 @@ const DETECTION_INTERVAL_MS = 1000 / 10;
 let lastDetectionAt = 0;
 
 function targetAspect(scanType: ScanType) {
-  const { width, height } = scanTypeConfig[scanType].output;
-  return width / height;
+  return scanTypeConfig[scanType].aspectRatio;
 }
 
 function distance(a: ScanPoint, b: ScanPoint) {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function normalizeQuality(partial: Partial<ScanQualityMetrics>): ScanQualityMetrics {
+  return {
+    blurScore: partial.blurScore ?? 0,
+    brightnessScore: partial.brightnessScore ?? 0.5,
+    glareScore: partial.glareScore,
+    shadowScore: partial.shadowScore,
+    tiltScore: partial.tiltScore,
+    fillRatio: partial.fillRatio ?? 0,
+    stabilityScore: partial.stabilityScore ?? 0,
+  };
 }
 
 /** Order corners: top-left, top-right, bottom-right, bottom-left. */
@@ -59,6 +70,26 @@ function readSourceCanvas(source: HTMLVideoElement | HTMLCanvasElement): HTMLCan
   return canvas;
 }
 
+export function scoreCandidateContour(
+  corners: ScanPoint[],
+  scanType: ScanType,
+  frameSize: { width: number; height: number },
+  area: number,
+): number {
+  const frameArea = frameSize.width * frameSize.height;
+  const aspectTarget = targetAspect(scanType);
+  const ordered = orderCorners(corners);
+  const aspect = contourAspect(ordered);
+  const aspectDelta = Math.abs(aspect - aspectTarget) / aspectTarget;
+  const centerX = ordered.reduce((sum, point) => sum + point.x, 0) / 4;
+  const centerY = ordered.reduce((sum, point) => sum + point.y, 0) / 4;
+  const centerWeight = 1 - (Math.abs(centerX / frameSize.width - 0.5) + Math.abs(centerY / frameSize.height - 0.5));
+  const areaWeight = Math.min(1, area / (frameArea * 0.45));
+  const aspectWeight = Math.max(0, 1 - aspectDelta * 2.2);
+  const rectangularity = tiltFromCorners(corners);
+  return areaWeight * 0.3 + aspectWeight * 0.35 + centerWeight * 0.2 + rectangularity * 0.15;
+}
+
 export function calculateQualityMetrics(
   canvas: HTMLCanvasElement,
   corners?: ScanPoint[],
@@ -66,7 +97,7 @@ export function calculateQualityMetrics(
 ): ScanQualityMetrics {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) {
-    return { blurScore: 0, brightnessScore: 0.5 };
+    return normalizeQuality({ blurScore: 0, brightnessScore: 0.5 });
   }
 
   const { width, height } = canvas;
@@ -78,10 +109,7 @@ export function calculateQualityMetrics(
   const total = width * height;
 
   for (let i = 0; i < sample.length; i += 16) {
-    const r = sample[i];
-    const g = sample[i + 1];
-    const b = sample[i + 2];
-    const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    const lum = (0.299 * sample[i] + 0.587 * sample[i + 1] + 0.114 * sample[i + 2]) / 255;
     sum += lum;
     sumSq += lum * lum;
     if (lum > 0.92) brightPixels += 1;
@@ -91,13 +119,9 @@ export function calculateQualityMetrics(
   const samples = total / 4;
   const mean = sum / samples;
   const variance = Math.max(0, sumSq / samples - mean * mean);
-  const blurScore = Math.min(1, variance * 18);
-  const brightnessScore = mean;
-  const glareScore = brightPixels / samples;
-  const shadowScore = darkPixels / samples;
 
-  let fillRatio: number | undefined;
-  let tiltScore: number | undefined;
+  let fillRatio = 0;
+  let tiltScore = 0.5;
   if (corners?.length === 4) {
     const ordered = orderCorners(corners);
     const area = Math.abs(
@@ -110,24 +134,32 @@ export function calculateQualityMetrics(
     tiltScore = tiltFromCorners(corners);
   }
 
-  let stabilityScore: number | undefined;
-  if (corners?.length === 4 && previousCorners?.length === 4) {
-    const ordered = orderCorners(corners);
-    const prev = orderCorners(previousCorners);
-    const drift = ordered.reduce((acc, point, index) => acc + distance(point, prev[index]), 0) / 4;
-    const normalized = drift / Math.max(width, height);
-    stabilityScore = Math.max(0, 1 - normalized * 12);
-  }
+  const stabilityScore = previousCorners?.length === 4 && corners?.length === 4
+    ? (() => {
+      const ordered = orderCorners(corners);
+      const prev = orderCorners(previousCorners);
+      const drift = ordered.reduce((acc, point, index) => acc + distance(point, prev[index]), 0) / 4;
+      return Math.max(0, 1 - (drift / Math.max(width, height)) * 12);
+    })()
+    : 0;
 
-  return {
-    blurScore,
-    brightnessScore,
-    glareScore,
-    shadowScore,
+  return normalizeQuality({
+    blurScore: Math.min(1, variance * 18),
+    brightnessScore: mean,
+    glareScore: brightPixels / samples,
+    shadowScore: darkPixels / samples,
     tiltScore,
     fillRatio,
     stabilityScore,
-  };
+  });
+}
+
+export function isReadyForAutoCapture(
+  detection: CardEdgeDetection,
+  stableMs: number,
+  options?: { minConfidence?: number; minStableMs?: number },
+): boolean {
+  return shouldAutoCapture(detection, stableMs, options);
 }
 
 export function shouldAutoCapture(
@@ -136,17 +168,26 @@ export function shouldAutoCapture(
   options?: { minConfidence?: number; minStableMs?: number },
 ): boolean {
   const minConfidence = options?.minConfidence ?? 0.62;
-  const minStableMs = options?.minStableMs ?? 850;
-  const metrics = detection.metrics;
+  const minStableMs = options?.minStableMs ?? 800;
+  const quality = detection.quality;
   if (!detection.found || !detection.corners?.length) return false;
   if (detection.confidence < minConfidence) return false;
   if (stableMs < minStableMs) return false;
-  if (metrics.blurScore < 0.28) return false;
-  if (metrics.brightnessScore < 0.18 || metrics.brightnessScore > 0.96) return false;
-  if ((metrics.glareScore ?? 0) > 0.22) return false;
-  if ((metrics.stabilityScore ?? 0) < 0.72) return false;
-  if ((metrics.fillRatio ?? 0) < 0.12) return false;
+  if (quality.blurScore < 0.28) return false;
+  if (quality.brightnessScore < 0.18 || quality.brightnessScore > 0.96) return false;
+  if ((quality.glareScore ?? 0) > 0.22) return false;
+  if (quality.stabilityScore < 0.72) return false;
+  if (quality.fillRatio < 0.12) return false;
   return true;
+}
+
+function emptyDetection(message: string, quality?: ScanQualityMetrics): CardEdgeDetection {
+  return {
+    found: false,
+    confidence: 0,
+    message,
+    quality: quality ?? normalizeQuality({ blurScore: 0, brightnessScore: 0.5 }),
+  };
 }
 
 export async function detectCardEdges(
@@ -157,35 +198,18 @@ export async function detectCardEdges(
 ): Promise<CardEdgeDetection> {
   const now = performance.now();
   if (!options?.force && now - lastDetectionAt < DETECTION_INTERVAL_MS) {
-    return {
-      found: false,
-      confidence: 0,
-      reason: "throttled",
-      metrics: { blurScore: 0, brightnessScore: 0.5 },
-    };
+    return emptyDetection("throttled");
   }
   lastDetectionAt = now;
 
   const canvas = readSourceCanvas(source);
-  const fallbackMetrics = calculateQualityMetrics(canvas, undefined, previousCorners);
+  const fallbackQuality = calculateQualityMetrics(canvas, undefined, previousCorners);
 
   const cv = await loadOpenCv();
-  if (!cv) {
-    return {
-      found: false,
-      confidence: 0,
-      reason: "OpenCV unavailable",
-      metrics: fallbackMetrics,
-    };
-  }
+  if (!cv) return emptyDetection("OpenCV unavailable", fallbackQuality);
 
   if (source instanceof HTMLVideoElement && (!source.videoWidth || !source.videoHeight)) {
-    return {
-      found: false,
-      confidence: 0,
-      reason: "Camera not ready",
-      metrics: fallbackMetrics,
-    };
+    return emptyDetection("Camera not ready", fallbackQuality);
   }
 
   let src: OpenCvMat | null = null;
@@ -208,8 +232,8 @@ export async function detectCardEdges(
     hierarchy = new cv.Mat();
     cv.findContours(edges, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
 
-    const frameArea = canvas.width * canvas.height;
-    const aspectTarget = targetAspect(scanType);
+    const frameSize = { width: canvas.width, height: canvas.height };
+    const frameArea = frameSize.width * frameSize.height;
     let best: { corners: ScanPoint[]; score: number } | null = null;
 
     for (let i = 0; i < contours.size(); i += 1) {
@@ -230,18 +254,8 @@ export async function detectCardEdges(
           corners.push({ x: approx.data32S[row * 2], y: approx.data32S[row * 2 + 1] });
         }
         const ordered = orderCorners(corners);
-        const aspect = contourAspect(ordered);
-        const aspectDelta = Math.abs(aspect - aspectTarget) / aspectTarget;
-        const centerX = ordered.reduce((sum, point) => sum + point.x, 0) / 4;
-        const centerY = ordered.reduce((sum, point) => sum + point.y, 0) / 4;
-        const centerWeight = 1 - (Math.abs(centerX / canvas.width - 0.5) + Math.abs(centerY / canvas.height - 0.5));
-        const areaWeight = Math.min(1, area / (frameArea * 0.45));
-        const aspectWeight = Math.max(0, 1 - aspectDelta * 2.2);
-        const score = areaWeight * 0.35 + aspectWeight * 0.4 + centerWeight * 0.25;
-
-        if (!best || score > best.score) {
-          best = { corners: ordered, score };
-        }
+        const score = scoreCandidateContour(ordered, scanType, frameSize, area);
+        if (!best || score > best.score) best = { corners: ordered, score };
       }
 
       approx.delete();
@@ -249,31 +263,15 @@ export async function detectCardEdges(
     }
 
     if (!best) {
-      const metrics = calculateQualityMetrics(canvas, undefined, previousCorners);
-      return {
-        found: false,
-        confidence: 0,
-        reason: "No card edges found",
-        metrics,
-      };
+      return emptyDetection("No card edges found", calculateQualityMetrics(canvas, undefined, previousCorners));
     }
 
-    const metrics = calculateQualityMetrics(canvas, best.corners, previousCorners);
-    const confidence = Math.min(1, best.score * 0.55 + (metrics.tiltScore ?? 0.5) * 0.2 + metrics.blurScore * 0.25);
+    const quality = calculateQualityMetrics(canvas, best.corners, previousCorners);
+    const confidence = Math.min(1, best.score * 0.55 + (quality.tiltScore ?? 0.5) * 0.2 + quality.blurScore * 0.25);
 
-    return {
-      found: true,
-      corners: best.corners,
-      confidence,
-      metrics,
-    };
+    return { found: true, corners: best.corners, confidence, quality };
   } catch {
-    return {
-      found: false,
-      confidence: 0,
-      reason: "Detection failed",
-      metrics: fallbackMetrics,
-    };
+    return emptyDetection("Detection failed", fallbackQuality);
   } finally {
     src?.delete();
     gray?.delete();
@@ -316,10 +314,7 @@ export async function perspectiveCorrect(
       ordered[3].x, ordered[3].y,
     ]);
     dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
-      0, 0,
-      outputWidth, 0,
-      outputWidth, outputHeight,
-      0, outputHeight,
+      0, 0, outputWidth, 0, outputWidth, outputHeight, 0, outputHeight,
     ]);
     transform = cv.getPerspectiveTransform(srcTri, dstTri);
     cv.warpPerspective(src, dst, transform, new cv.Size(outputWidth, outputHeight), cv.INTER_LINEAR, cv.BORDER_REPLICATE);
@@ -362,8 +357,7 @@ export async function enhanceScan(
     channels = new cv.MatVector();
     cv.split(lab, channels);
     enhancedL = new cv.Mat();
-    const clipLimit = level === "strong" ? 2.8 : 1.8;
-    const clahe = new cv.CLAHE(clipLimit, new cv.Size(8, 8));
+    const clahe = new cv.CLAHE(level === "strong" ? 2.8 : 1.8, new cv.Size(8, 8));
     clahe.apply(channels.get(0), enhancedL);
     clahe.delete();
     channels.set(0, enhancedL);
@@ -372,7 +366,6 @@ export async function enhanceScan(
     cv.merge(channels, merged);
     rgb = new cv.Mat();
     cv.cvtColor(merged, rgb, cv.COLOR_Lab2RGB);
-
     sharpened = new cv.Mat();
     kernel = cv.matFromArray(3, 3, cv.CV_32FC1, [
       0, level === "strong" ? -0.6 : -0.35, 0,
@@ -400,29 +393,12 @@ export async function enhanceScan(
   }
 }
 
-export function canvasToJpegFile(canvas: HTMLCanvasElement, scanType: ScanType, suffix = "pro"): Promise<File> {
+export function canvasToJpegFile(canvas: HTMLCanvasElement, scanType: ScanType, suffix = "scan"): Promise<File> {
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => {
-      if (!blob) {
-        reject(new Error("Unable to encode capture."));
-        return;
-      }
-      const label = scanType === "graded-slab" ? "guided-slab" : "guided-card";
+      if (!blob) { reject(new Error("Unable to encode capture.")); return; }
+      const label = scanType === "graded" ? "slab" : "card";
       resolve(new File([blob], `${label}-${suffix}-${Date.now()}.jpg`, { type: "image/jpeg", lastModified: Date.now() }));
     }, "image/jpeg", 0.92);
   });
-}
-
-export function resolveScanUiState(
-  detection: CardEdgeDetection | null,
-  stableMs: number,
-): import("@/lib/scanner/scanMetadata").ScanUiState {
-  if (!detection?.found) return "searching";
-  const metrics = detection.metrics;
-  if (metrics.blurScore < 0.28 || metrics.brightnessScore < 0.18 || metrics.brightnessScore > 0.96 || (metrics.glareScore ?? 0) > 0.22) {
-    return "quality-issue";
-  }
-  if (shouldAutoCapture(detection, stableMs)) return "ready";
-  if ((metrics.stabilityScore ?? 0) < 0.72 || stableMs < 850) return "unstable";
-  return detection.confidence >= 0.62 ? "ready" : "unstable";
 }
