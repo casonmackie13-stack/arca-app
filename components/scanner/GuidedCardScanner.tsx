@@ -42,12 +42,10 @@ export default function GuidedCardScanner({
     dispatch({ type: "OPEN" });
   }, [open, side]);
 
-  useEffect(() => () => {
-    stopStream(streamRef.current);
-  }, []);
+  const cameraActive = open && state.phase !== "PREVIEW";
 
   useEffect(() => {
-    if (!open || !isCameraPhase(state.phase) || state.phase === "CAPTURING") return;
+    if (!cameraActive) return;
     let active = true;
 
     async function startCamera() {
@@ -62,17 +60,22 @@ export default function GuidedCardScanner({
         if (!active) { stopStream(stream); return; }
         streamRef.current = stream;
         const video = videoRef.current;
-        if (video) {
-          video.srcObject = stream;
-          await new Promise<void>((resolve, reject) => {
-            const onReady = () => { video.removeEventListener("loadedmetadata", onReady); resolve(); };
-            const onError = () => { video.removeEventListener("error", onError); reject(new Error("Camera failed to start.")); };
-            video.addEventListener("loadedmetadata", onReady);
-            video.addEventListener("error", onError);
-            void video.play().catch(reject);
-          });
-          dispatch({ type: "CAMERA_READY" });
+        if (!video) {
+          stopStream(stream);
+          streamRef.current = null;
+          dispatch({ type: "CAMERA_ERROR", message: "Camera preview failed to start." });
+          return;
         }
+        video.srcObject = stream;
+        await new Promise<void>((resolve, reject) => {
+          const onReady = () => { video.removeEventListener("loadedmetadata", onReady); resolve(); };
+          const onError = () => { video.removeEventListener("error", onError); reject(new Error("Camera failed to start.")); };
+          video.addEventListener("loadedmetadata", onReady);
+          video.addEventListener("error", onError);
+          void video.play().catch(reject);
+        });
+        if (!active) return;
+        dispatch({ type: "CAMERA_READY" });
       } catch (cause) {
         if (!active) return;
         const message = cause instanceof DOMException && cause.name === "NotAllowedError"
@@ -82,13 +85,13 @@ export default function GuidedCardScanner({
       }
     }
 
-    if (state.phase === "INITIALIZING") void startCamera();
+    void startCamera();
     return () => {
       active = false;
       stopStream(streamRef.current);
       streamRef.current = null;
     };
-  }, [open, state.phase]);
+  }, [cameraActive, side]);
 
   async function runCapture(mode: CaptureMode) {
     if (!videoRef.current || state.phase === "CAPTURING") return;
@@ -132,9 +135,9 @@ export default function GuidedCardScanner({
 
   const showCamera = isCameraPhase(state.phase) || state.phase === "ERROR";
 
-  return <div className="fixed inset-0 z-50 bg-black text-white">
+  return <div className="fixed inset-0 z-[100] bg-black text-white">
     {showCamera && <div className="relative min-h-[100svh] overflow-hidden">
-      <video ref={videoRef} playsInline muted className="absolute inset-0 h-full w-full object-cover" />
+      <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 h-full w-full object-cover" />
       {state.phase !== "ERROR" && (
         <GuideFrameOverlay scanType={state.scanType} overlayRef={overlayRef} phase={state.phase} />
       )}
