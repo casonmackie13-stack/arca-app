@@ -1,40 +1,25 @@
 /**
- * ARCA Scan Engine v1 — public API surface for the Add Card document scanner.
+ * ARCA scanner foundation — public API for the Add Card capture flow.
  *
- * Pipeline: live edge detection → auto/manual capture → perspective correction →
- * natural enhancement → quality review → OCR → AI recognition preview → Add Card pipeline.
+ * Vision, OCR, and enhancement modules are intentionally not exported here yet.
  */
 
-export {
-  detectCardEdges,
-  detectCardEdgesFromCanvas,
-  orderCorners,
-  scoreCandidateContour,
-  perspectiveCorrect,
-  enhanceScan,
-  calculateQualityMetrics,
-  isReadyForAutoCapture,
-  shouldAutoCapture,
-  canvasToJpegFile,
-} from "@/lib/scanner/cardVision";
+export { processGuidedCapture } from "@/lib/scanner/captureProcessor";
+export { scannerReducer } from "@/lib/scanner/scannerReducer";
 
-export { processGuidedCapture, redetectForCapture } from "@/lib/scanner/captureProcessor";
-export { runLocalOCR, terminateOcrWorker } from "@/lib/scanner/ocr";
-export { runRecognitionPreview, buildRecognitionPayload, recognitionPreviewLabel } from "@/lib/scanner/recognitionPreview";
-export { previewQualityWarnings, previewNeedsReview, assessCaptureQuality } from "@/lib/scanner/previewQuality";
-export { resolveScannerMessage, scannerMessageLabel } from "@/lib/scanner/scannerMessages";
-export { useLiveDetection } from "@/lib/scanner/useLiveDetection";
+export {
+  initialScannerState,
+  isCameraPhase,
+  scannerPhaseLabel,
+} from "@/lib/scanner/scannerTypes";
 
 export type {
-  Point,
-  ScanDetectionResult,
-  ScanQualityMetrics,
-  ScanMetadata,
-  ScanRecognitionPreview,
-  ScanRecognitionPayload,
+  ScanType,
+  CaptureMode,
+  ScannerPhase,
+  ScannerState,
+  ScannerEvent,
   GuidedCaptureResult,
-  ScannerMessage,
-  OcrResult,
-} from "@/lib/scanner/scanMetadata";
+} from "@/lib/scanner/scannerTypes";
 
-export type { ScanType } from "@/components/scanner/scanTypes";
+export { scanTypeConfig } from "@/components/scanner/scanTypes";

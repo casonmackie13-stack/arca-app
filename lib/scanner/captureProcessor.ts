@@ -1,18 +1,8 @@
 "use client";
 
-import type { ScanType } from "@/components/scanner/scanTypes";
+import type { ScanType } from "@/lib/scanner/scannerTypes";
+import type { GuidedCaptureResult } from "@/lib/scanner/scannerTypes";
 import { scanTypeConfig } from "@/components/scanner/scanTypes";
-import {
-  canvasToJpegFile,
-  detectCardEdges,
-  enhanceScan,
-  perspectiveCorrect,
-  calculateQualityMetrics,
-} from "@/lib/scanner/cardVision";
-import { assessCaptureQuality } from "@/lib/scanner/previewQuality";
-import type { CardEdgeDetection, GuidedCaptureResult, ScanMetadata, ScanPoint } from "@/lib/scanner/scanMetadata";
-
-const EDGE_CONFIDENCE_THRESHOLD = 0.55;
 
 function captureVideoFrame(video: HTMLVideoElement): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
@@ -59,88 +49,39 @@ function cropGuideFrame(
   return canvas;
 }
 
-async function buildCaptureFromCanvas(
-  canvas: HTMLCanvasElement,
-  scanType: ScanType,
-  metadata: Omit<ScanMetadata, "scanType">,
-): Promise<GuidedCaptureResult> {
-  const enhanced = await enhanceScan(canvas, "natural");
-  const quality = assessCaptureQuality(enhanced);
-  const file = await canvasToJpegFile(enhanced, scanType, metadata.edgeDetected ? "edge" : "guide");
-  return {
-    file,
-    scanType,
-    metadata: { ...metadata, scanType, quality: metadata.quality ?? quality },
-  };
+async function canvasToJpegFile(canvas: HTMLCanvasElement, scanType: ScanType): Promise<File> {
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((value) => {
+      if (value) resolve(value);
+      else reject(new Error("Could not encode capture."));
+    }, "image/jpeg", 0.92);
+  });
+  return new File([blob], `arca-${scanType}-${Date.now()}.jpg`, { type: "image/jpeg" });
 }
 
 export async function processGuidedCapture(options: {
   video: HTMLVideoElement;
   overlayElement: HTMLElement | null;
   scanType: ScanType;
-  captureMode: "auto" | "manual";
-  liveDetection?: CardEdgeDetection | null;
 }): Promise<GuidedCaptureResult> {
-  const { video, overlayElement, scanType, captureMode, liveDetection } = options;
+  const { video, overlayElement, scanType } = options;
   const output = scanTypeConfig[scanType].output;
-  const frame = captureVideoFrame(video);
-
-  const corners = liveDetection?.found && liveDetection.confidence >= EDGE_CONFIDENCE_THRESHOLD
-    ? liveDetection.corners
-    : undefined;
-
-  if (corners?.length === 4) {
-    try {
-      const corrected = await perspectiveCorrect(frame, corners, output.width, output.height);
-      const quality = calculateQualityMetrics(corrected, corners);
-      return buildCaptureFromCanvas(corrected, scanType, {
-        captureMode,
-        edgeDetected: true,
-        perspectiveCorrected: true,
-        edgeConfidence: liveDetection?.confidence,
-        quality,
-      });
-    } catch {
-      // Fall through to guide-frame crop.
-    }
-  }
 
   if (overlayElement) {
     try {
       const cropped = cropGuideFrame(video, overlayElement.getBoundingClientRect(), output);
-      const quality = calculateQualityMetrics(cropped);
-      return buildCaptureFromCanvas(cropped, scanType, {
-        captureMode,
-        edgeDetected: false,
-        perspectiveCorrected: false,
-        fallbackCrop: true,
-        edgeConfidence: liveDetection?.confidence,
-        quality,
-      });
+      const file = await canvasToJpegFile(cropped, scanType);
+      return { file, scanType };
     } catch {
       // Fall through to full frame.
     }
   }
 
+  const frame = captureVideoFrame(video);
   const full = document.createElement("canvas");
   full.width = output.width;
   full.height = output.height;
   full.getContext("2d")?.drawImage(frame, 0, 0, output.width, output.height);
-  const quality = calculateQualityMetrics(full);
-  return buildCaptureFromCanvas(full, scanType, {
-    captureMode,
-    edgeDetected: false,
-    perspectiveCorrected: false,
-    fallbackCrop: true,
-    edgeConfidence: liveDetection?.confidence,
-    quality,
-  });
-}
-
-export async function redetectForCapture(
-  video: HTMLVideoElement,
-  scanType: ScanType,
-  previousCorners?: ScanPoint[],
-): Promise<CardEdgeDetection> {
-  return detectCardEdges(video, scanType, previousCorners, { force: true });
+  const file = await canvasToJpegFile(full, scanType);
+  return { file, scanType };
 }
