@@ -55,7 +55,16 @@ export async function POST(request: Request) {
       { type: "input_text", text: "FRONT IMAGE" },
       { type: "input_image", image_url: front, detail: "high" },
     ];
+    if (body.front_ocr_text?.trim()) {
+      content.push({ type: "input_text", text: `LOCAL OCR FRONT TEXT (may contain noise, use as hints only):\n${body.front_ocr_text.trim()}` });
+    }
     if (back) content.push({ type: "input_text", text: "BACK IMAGE" }, { type: "input_image", image_url: back, detail: "high" });
+    if (body.back_ocr_text?.trim()) {
+      content.push({ type: "input_text", text: `LOCAL OCR BACK TEXT (may contain noise, use as hints only):\n${body.back_ocr_text.trim()}` });
+    }
+    if (body.scan_metadata && typeof body.scan_metadata === "object") {
+      content.push({ type: "input_text", text: `SCAN METADATA (hints only): ${JSON.stringify(body.scan_metadata)}` });
+    }
 
     const ai = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",

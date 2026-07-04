@@ -1,24 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ImageUpload } from "@/components/ui/ImageUpload";
-import BoundaryOverlay from "@/components/scanner/BoundaryOverlay";
+import LiveEdgeOverlay from "@/components/scanner/LiveEdgeOverlay";
 import ScanPreview from "@/components/scanner/ScanPreview";
+import ScanQualityHints from "@/components/scanner/ScanQualityHints";
 import ScanTypeSelector from "@/components/scanner/ScanTypeSelector";
 import type { ScanType } from "@/components/scanner/scanTypes";
 import { scanTypeConfig } from "@/components/scanner/scanTypes";
+import { processGuidedCapture, redetectForCapture } from "@/lib/scanner/captureProcessor";
+import { mapCornersToDisplay, type VideoDisplayMetrics } from "@/lib/scanner/displayMapping";
+import { terminateOcrWorker } from "@/lib/scanner/ocr";
+import type { GuidedCaptureResult } from "@/lib/scanner/scanMetadata";
+import { useLiveDetection } from "@/lib/scanner/useLiveDetection";
 
 type ScannerPhase = "select" | "camera" | "preview";
-
-function canvasToFile(canvas: HTMLCanvasElement, scanType: ScanType) {
-  return new Promise<File>((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (!blob) { reject(new Error("Unable to capture image.")); return; }
-      const suffix = scanType === "graded-slab" ? "guided-slab" : "guided-card";
-      resolve(new File([blob], `${suffix}-${Date.now()}.jpg`, { type: "image/jpeg", lastModified: Date.now() }));
-    }, "image/jpeg", 0.9);
-  });
-}
 
 function stopStream(stream: MediaStream | null) {
   stream?.getTracks().forEach((track) => track.stop());
@@ -34,26 +30,68 @@ export default function GuidedCardScanner({
   open: boolean;
   side: "front" | "back";
   onClose: () => void;
-  onCapture: (file: File, scanType: ScanType, overlayCropSucceeded: boolean) => void;
+  onCapture: (result: GuidedCaptureResult) => void;
   onFileFallback: (file: File | null) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const autoCapturedRef = useRef(false);
+  const runCaptureRef = useRef<() => Promise<GuidedCaptureResult | null>>(async () => null);
   const [phase, setPhase] = useState<ScannerPhase>("select");
   const [scanType, setScanType] = useState<ScanType | null>(null);
   const [cameraError, setCameraError] = useState("");
-  const [capturedFile, setCapturedFile] = useState<File | null>(null);
+  const [capturedResult, setCapturedResult] = useState<GuidedCaptureResult | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [overlayCropSucceeded, setOverlayCropSucceeded] = useState(true);
   const [capturing, setCapturing] = useState(false);
+  const [autoCaptureEnabled, setAutoCaptureEnabled] = useState(false);
+  const [videoMetrics, setVideoMetrics] = useState<VideoDisplayMetrics | null>(null);
+
+  const liveActive = open && phase === "camera" && Boolean(scanType) && !cameraError;
+  const { detection, scanState, stableMs, readyForAutoCapture } = useLiveDetection(videoRef, scanType, liveActive);
+  const detectionRef = useRef(detection);
+
+  useEffect(() => {
+    detectionRef.current = detection;
+  }, [detection]);
+
+  useEffect(() => {
+    if (!liveActive) return;
+    const video = videoRef.current;
+    if (!video) return;
+
+    function updateMetrics() {
+      const current = videoRef.current;
+      if (!current?.videoWidth || !current.videoHeight) return;
+      const rect = current.getBoundingClientRect();
+      setVideoMetrics({
+        videoWidth: current.videoWidth,
+        videoHeight: current.videoHeight,
+        displayWidth: rect.width,
+        displayHeight: rect.height,
+      });
+    }
+
+    video.addEventListener("loadedmetadata", updateMetrics);
+    const interval = window.setInterval(updateMetrics, 120);
+    updateMetrics();
+    return () => {
+      video.removeEventListener("loadedmetadata", updateMetrics);
+      window.clearInterval(interval);
+    };
+  }, [liveActive, scanType]);
+
+  const displayCorners = useMemo(() => {
+    if (!liveActive || !detection?.corners || detection.corners.length !== 4 || !videoMetrics) return null;
+    return mapCornersToDisplay(detection.corners, videoMetrics);
+  }, [detection, liveActive, videoMetrics]);
 
   function resetScanner() {
     setPhase("select");
     setScanType(null);
     setCameraError("");
-    setCapturedFile(null);
-    setOverlayCropSucceeded(true);
+    setCapturedResult(null);
+    autoCapturedRef.current = false;
     setPreviewUrl((current) => {
       if (current) URL.revokeObjectURL(current);
       return null;
@@ -63,23 +101,40 @@ export default function GuidedCardScanner({
   useEffect(() => () => {
     stopStream(streamRef.current);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
+    void terminateOcrWorker();
   }, [previewUrl]);
 
   useEffect(() => {
     if (!open || phase !== "camera" || !scanType) return;
     let active = true;
+    autoCapturedRef.current = false;
+
     async function startCamera() {
       setCameraError("");
       stopStream(streamRef.current);
       streamRef.current = null;
       try {
         if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera is not available on this device.");
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+          audio: false,
+        });
         if (!active) { stopStream(stream); return; }
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
+        const video = videoRef.current;
+        if (video) {
+          video.srcObject = stream;
+          await new Promise<void>((resolve, reject) => {
+            const onReady = () => { video.removeEventListener("loadedmetadata", onReady); resolve(); };
+            const onError = () => { video.removeEventListener("error", onError); reject(new Error("Camera failed to start.")); };
+            video.addEventListener("loadedmetadata", onReady);
+            video.addEventListener("error", onError);
+            void video.play().catch(reject);
+          });
         }
       } catch (cause) {
         if (!active) return;
@@ -89,6 +144,7 @@ export default function GuidedCardScanner({
         setCameraError(message);
       }
     }
+
     void startCamera();
     return () => {
       active = false;
@@ -96,6 +152,46 @@ export default function GuidedCardScanner({
       streamRef.current = null;
     };
   }, [open, phase, scanType]);
+
+  async function runCapture() {
+    if (!videoRef.current || !scanType || capturing) return null;
+    setCapturing(true);
+    try {
+      const freshDetection = await redetectForCapture(videoRef.current, scanType, detectionRef.current?.corners);
+      const result = await processGuidedCapture({
+        video: videoRef.current,
+        overlayElement: overlayRef.current,
+        scanType,
+        liveDetection: freshDetection,
+      });
+      const url = URL.createObjectURL(result.file);
+      setCapturedResult(result);
+      setPreviewUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return url;
+      });
+      stopStream(streamRef.current);
+      streamRef.current = null;
+      setPhase("preview");
+      return result;
+    } catch (cause) {
+      setCameraError(cause instanceof Error ? `${cause.message} Try again or choose a photo from your library.` : "Capture failed. Try again or choose a photo from your library.");
+      return null;
+    } finally {
+      setCapturing(false);
+    }
+  }
+
+  useEffect(() => {
+    runCaptureRef.current = runCapture;
+  });
+
+  useEffect(() => {
+    if (!autoCaptureEnabled || !liveActive || capturing || autoCapturedRef.current) return;
+    if (!readyForAutoCapture) return;
+    autoCapturedRef.current = true;
+    void runCaptureRef.current();
+  }, [autoCaptureEnabled, capturing, liveActive, readyForAutoCapture]);
 
   if (!open) return null;
 
@@ -111,81 +207,9 @@ export default function GuidedCardScanner({
     setPhase("camera");
   }
 
-  async function captureFrame() {
-    if (!videoRef.current || !overlayRef.current || !scanType || capturing) return;
-    setCapturing(true);
-    try {
-      const video = videoRef.current;
-      const overlay = overlayRef.current;
-      const videoRect = video.getBoundingClientRect();
-      const overlayRect = overlay.getBoundingClientRect();
-      const videoWidth = video.videoWidth;
-      const videoHeight = video.videoHeight;
-      if (!videoWidth || !videoHeight || !videoRect.width || !videoRect.height) throw new Error("Camera frame is not ready.");
-
-      const scale = Math.max(videoRect.width / videoWidth, videoRect.height / videoHeight);
-      const renderedWidth = videoWidth * scale;
-      const renderedHeight = videoHeight * scale;
-      const offsetX = (videoRect.width - renderedWidth) / 2;
-      const offsetY = (videoRect.height - renderedHeight) / 2;
-      const sourceX = (overlayRect.left - videoRect.left - offsetX) / scale;
-      const sourceY = (overlayRect.top - videoRect.top - offsetY) / scale;
-      const sourceWidth = overlayRect.width / scale;
-      const sourceHeight = overlayRect.height / scale;
-      const sx = Math.max(0, Math.min(videoWidth, sourceX));
-      const sy = Math.max(0, Math.min(videoHeight, sourceY));
-      const sw = Math.max(1, Math.min(videoWidth - sx, sourceWidth));
-      const sh = Math.max(1, Math.min(videoHeight - sy, sourceHeight));
-      const output = scanTypeConfig[scanType].output;
-      const canvas = document.createElement("canvas");
-      canvas.width = output.width;
-      canvas.height = output.height;
-      const context = canvas.getContext("2d");
-      if (!context) throw new Error("Canvas is unavailable.");
-      context.drawImage(video, sx, sy, sw, sh, 0, 0, output.width, output.height);
-      const file = await canvasToFile(canvas, scanType);
-      const url = URL.createObjectURL(file);
-      setCapturedFile(file);
-      setOverlayCropSucceeded(true);
-      setPreviewUrl((current) => {
-        if (current) URL.revokeObjectURL(current);
-        return url;
-      });
-      stopStream(streamRef.current);
-      streamRef.current = null;
-      setPhase("preview");
-    } catch (cause) {
-      try {
-        const video = videoRef.current;
-        if (!video?.videoWidth || !video.videoHeight || !scanType) throw cause;
-        const canvas = document.createElement("canvas");
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        const context = canvas.getContext("2d");
-        if (!context) throw cause;
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const file = await canvasToFile(canvas, scanType);
-        const url = URL.createObjectURL(file);
-        setCapturedFile(file);
-        setOverlayCropSucceeded(false);
-        setPreviewUrl((current) => {
-          if (current) URL.revokeObjectURL(current);
-          return url;
-        });
-        stopStream(streamRef.current);
-        streamRef.current = null;
-        setPhase("preview");
-      } catch {
-        setCameraError(cause instanceof Error ? `${cause.message} Try again or choose a photo from your library.` : "Capture failed. Try again or choose a photo from your library.");
-      }
-    } finally {
-      setCapturing(false);
-    }
-  }
-
   function retake() {
-    setCapturedFile(null);
-    setOverlayCropSucceeded(true);
+    setCapturedResult(null);
+    autoCapturedRef.current = false;
     setPreviewUrl((current) => {
       if (current) URL.revokeObjectURL(current);
       return null;
@@ -194,8 +218,8 @@ export default function GuidedCardScanner({
   }
 
   function useCapture() {
-    if (!capturedFile || !scanType) return;
-    onCapture(capturedFile, scanType, overlayCropSucceeded);
+    if (!capturedResult) return;
+    onCapture(capturedResult);
     closeScanner();
   }
 
@@ -212,27 +236,47 @@ export default function GuidedCardScanner({
 
     {phase === "camera" && scanType && <div className="relative min-h-[100svh] overflow-hidden bg-black text-white">
       <video ref={videoRef} playsInline muted className="absolute inset-0 h-full w-full object-cover" />
-      <BoundaryOverlay type={scanType} overlayRef={overlayRef} />
+      <LiveEdgeOverlay type={scanType} overlayRef={overlayRef} displayCorners={displayCorners} />
+      <ScanQualityHints
+        state={scanState}
+        autoCaptureEnabled={autoCaptureEnabled}
+        stableMs={stableMs}
+        confidence={detection?.confidence ?? 0}
+      />
       <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-3 bg-gradient-to-b from-black/80 to-transparent px-4 pb-8 pt-[max(1rem,env(safe-area-inset-top))]">
-        <button type="button" onClick={() => { stopStream(streamRef.current); streamRef.current = null; setPhase("select"); }} className="min-h-11 rounded-full bg-black/45 px-4 text-sm font-semibold text-white backdrop-blur">Back</button>
+        <button type="button" onClick={() => { stopStream(streamRef.current); streamRef.current = null; autoCapturedRef.current = false; setPhase("select"); }} className="min-h-11 rounded-full bg-black/45 px-4 text-sm font-semibold text-white backdrop-blur">Back</button>
         <div className="text-center">
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--gold-primary)]">Scan {side}</p>
           <p className="mt-1 text-sm font-semibold">{scanTypeConfig[scanType].title}</p>
         </div>
         <button type="button" onClick={closeScanner} className="min-h-11 rounded-full bg-black/45 px-4 text-sm font-semibold text-white backdrop-blur">Close</button>
       </div>
+      <div className="absolute right-4 top-[max(4.5rem,calc(env(safe-area-inset-top)+3.5rem))]">
+        <label className="flex items-center gap-2 rounded-full border border-white/15 bg-black/55 px-3 py-2 text-xs font-semibold text-white backdrop-blur">
+          <input
+            type="checkbox"
+            checked={autoCaptureEnabled}
+            onChange={(event) => {
+              autoCapturedRef.current = false;
+              setAutoCaptureEnabled(event.target.checked);
+            }}
+            className="h-4 w-4 accent-[var(--gold-primary)]"
+          />
+          Auto capture
+        </label>
+      </div>
       {cameraError && <div className="absolute inset-x-4 top-24 rounded-xl border border-[var(--status-warning)] bg-black/80 p-4 text-sm leading-6 text-white shadow-xl backdrop-blur">
         <p>{cameraError}</p>
         <div className="mt-4"><ImageUpload label="Choose photo instead" onChange={(file) => { onFileFallback(file); closeScanner(); }} aspect="card" allowRemove={false} /></div>
       </div>}
       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/80 to-transparent p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
-        <button type="button" disabled={capturing || Boolean(cameraError)} onClick={captureFrame} className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-white/20 shadow-[0_0_0_8px_rgba(255,255,255,.16)] backdrop-blur disabled:opacity-50" aria-label="Capture image">
+        <button type="button" disabled={capturing || Boolean(cameraError)} onClick={() => { void runCapture(); }} className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-white/20 shadow-[0_0_0_8px_rgba(255,255,255,.16)] backdrop-blur disabled:opacity-50" aria-label="Capture image">
           <span className="h-14 w-14 rounded-full bg-white" />
         </button>
-        <div className="mt-4 text-center text-xs text-white/65">Line up the edges, then tap capture.</div>
+        <div className="mt-4 text-center text-xs text-white/65">{autoCaptureEnabled ? "Hold steady for auto capture, or tap to capture now." : "Line up the edges, then tap capture."}</div>
       </div>
     </div>}
 
-    {phase === "preview" && scanType && previewUrl && <ScanPreview previewUrl={previewUrl} scanType={scanType} onRetake={retake} onUse={useCapture} />}
+    {phase === "preview" && scanType && previewUrl && capturedResult && <ScanPreview previewUrl={previewUrl} scanType={scanType} onRetake={retake} onUse={useCapture} />}
   </div>;
 }

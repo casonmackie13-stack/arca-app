@@ -99,7 +99,7 @@ export default function EditCardPage() {
 
       async function upload(file: File, side: "front" | "back") {
         const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
-        const path = `cards/${userId}-${Date.now()}-${side}-${createMobileSafeId()}.${extension}`;
+        const path = `${userId}/cards/${Date.now()}-${side}-${createMobileSafeId()}.${extension}`;
         const { error } = await supabase.storage.from("card_images").upload(path, file, { contentType: file.type, upsert: false });
         if (error) throw error;
         uploadedPaths.push(path);

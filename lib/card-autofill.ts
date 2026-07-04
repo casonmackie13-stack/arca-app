@@ -31,7 +31,11 @@ export async function archiveOriginalImage(file: File, userId?: string) {
   return error ? null : path;
 }
 
-export async function autofillCardInfo(frontImage: File, backImage?: File | null): Promise<CardAutofillResponse> {
+export async function autofillCardInfo(
+  frontImage: File,
+  backImage?: File | null,
+  options?: { frontOcrText?: string; backOcrText?: string; scanMetadata?: Record<string, unknown> },
+): Promise<CardAutofillResponse> {
   const token = await sessionToken();
   const user = (await supabase.auth.getUser()).data.user;
   const [frontArchivePath, backArchivePath, frontBase64, backBase64] = await Promise.all([
@@ -40,7 +44,19 @@ export async function autofillCardInfo(frontImage: File, backImage?: File | null
     compressedDataUrl(frontImage),
     backImage ? compressedDataUrl(backImage) : Promise.resolve(null),
   ]);
-  const response = await fetch("/api/card-autofill", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ front_image_base64: frontBase64, back_image_base64: backBase64, front_archive_path: frontArchivePath, back_archive_path: backArchivePath }) });
+  const response = await fetch("/api/card-autofill", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      front_image_base64: frontBase64,
+      back_image_base64: backBase64,
+      front_archive_path: frontArchivePath,
+      back_archive_path: backArchivePath,
+      front_ocr_text: options?.frontOcrText,
+      back_ocr_text: options?.backOcrText,
+      scan_metadata: options?.scanMetadata,
+    }),
+  });
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || "Couldn’t autofill this card. Enter details manually.");
   return payload as CardAutofillResponse;

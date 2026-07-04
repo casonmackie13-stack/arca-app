@@ -14,6 +14,9 @@ export type CardAutofillRequest = {
   back_image_mime_type?: "image/jpeg" | "image/png" | "image/webp";
   front_archive_path?: string;
   back_archive_path?: string;
+  front_ocr_text?: string;
+  back_ocr_text?: string;
+  scan_metadata?: Record<string, unknown>;
   /** Temporary compatibility aliases for the original front-only API. */
   image_url?: string;
   image_base64?: string;
