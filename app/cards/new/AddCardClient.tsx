@@ -33,8 +33,7 @@ import type { CardAutofillResponse, CardImageLookupResponse, CardSalesResponse, 
 import { salePrice } from "@/lib/card-sales";
 import { analyzeCardImage, type CardDetectionAnalysis } from "@/lib/image-processing/cardDetection";
 import { formatCardImage } from "@/lib/image-processing/cardFormatting";
-import type { ScanType } from "@/lib/scanner/scannerTypes";
-import type { GuidedCaptureResult } from "@/lib/scanner/scannerTypes";
+import type { GuidedCaptureResult, ScannerSession, ScanType } from "@/lib/scanner/scannerTypes";
 
 const steps = ["Capture image", "Card details", "Condition", "Collection", "Value", "Review & save"] as const;
 
@@ -57,7 +56,7 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
   const [backAnalysis, setBackAnalysis] = useState<CardDetectionAnalysis | null>(null);
   const [frontProcessing, setFrontProcessing] = useState(false);
   const [backProcessing, setBackProcessing] = useState(false);
-  const [scannerSide, setScannerSide] = useState<"front" | "back" | null>(null);
+  const [scannerSession, setScannerSession] = useState<ScannerSession | null>(null);
   const [saving, setSaving] = useState(false);
   const [autofilling, setAutofilling] = useState(false);
   const [autofillMessage, setAutofillMessage] = useState("");
@@ -96,6 +95,48 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
   }, [initialCollectionId, router]);
 
   useEffect(() => () => { if (frontPreview) URL.revokeObjectURL(frontPreview); if (backPreview) URL.revokeObjectURL(backPreview); }, [frontPreview, backPreview]);
+
+  function startScanner(request: { side: "front" | "back"; sequence: ScannerSession["sequence"] }) {
+    setScannerSession({
+      activeSide: request.side,
+      sequence: request.sequence,
+      resetKey: Date.now(),
+    });
+  }
+
+  function closeScanner() {
+    setScannerSession(null);
+  }
+
+  function advanceScannerAfterCapture(result: GuidedCaptureResult, side: "front" | "back") {
+    void chooseImage(side, result.file, { guidedScanType: result.scanType });
+    setScannerSession((current) => {
+      if (!current) return null;
+      if (side === "front" && current.sequence === "front-back") {
+        return {
+          activeSide: "back",
+          sequence: "front-back",
+          resetKey: Date.now(),
+        };
+      }
+      return null;
+    });
+  }
+
+  function handleScannerFileFallback(file: File | null, side: "front" | "back") {
+    void chooseImage(side, file);
+    setScannerSession((current) => {
+      if (!current) return null;
+      if (side === "front" && current.sequence === "front-back" && file) {
+        return {
+          activeSide: "back",
+          sequence: "front-back",
+          resetKey: Date.now(),
+        };
+      }
+      return null;
+    });
+  }
 
   function scanTypeMismatch(scanType: ScanType, analysis: CardDetectionAnalysis) {
     if (analysis.source === "fallback" || analysis.multipleCards) return "";
@@ -341,7 +382,7 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
   const selectedCollection = collections.find((collection) => collection.id === selectedCollectionId);
   const displayValue = form.estimatedValue.replace(/[$,]/g, "").trim();
   const imageProcessing = frontProcessing || backProcessing;
-  const scannerOpen = scannerSide !== null;
+  const scannerOpen = scannerSession !== null;
 
   function analysisNotice(label: string, analysis: CardDetectionAnalysis | null, processing: boolean) {
     if (processing) return <p className="mt-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text-secondary)]">Preparing {label.toLowerCase()} for 3D preview…</p>;
@@ -383,7 +424,7 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
             backPreview={backPreview}
             frontProcessing={frontProcessing}
             backProcessing={backProcessing}
-            onScan={setScannerSide}
+            onScan={startScanner}
             onRemove={(side) => { void chooseImage(side, null); }}
           />
           {analysisNotice("Front image", frontAnalysis, frontProcessing)}
@@ -409,19 +450,15 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
     </div>
     <QuickCollectionDialog open={quickCreateOpen} onClose={() => setQuickCreateOpen(false)} onCreated={handleCollectionCreated}/>
     <GuidedCardScanner
-      key={scannerSide ?? "idle"}
+      key={scannerSession ? `${scannerSession.activeSide}-${scannerSession.resetKey}` : "idle"}
       open={scannerOpen}
-      side={scannerSide || "front"}
-      onClose={() => setScannerSide(null)}
-      onCapture={(result: GuidedCaptureResult) => {
-        const side = scannerSide || "front";
-        void chooseImage(side, result.file, { guidedScanType: result.scanType });
-        setScannerSide(null);
-      }}
-      onFileFallback={(file) => {
-        const side = scannerSide || "front";
-        void chooseImage(side, file);
-      }}
+      activeSide={scannerSession?.activeSide ?? "front"}
+      sequence={scannerSession?.sequence ?? "front-back"}
+      resetKey={scannerSession?.resetKey ?? 0}
+      onClose={closeScanner}
+      onUseCapture={advanceScannerAfterCapture}
+      onSkipBack={scannerSession?.sequence === "front-back" ? closeScanner : undefined}
+      onFileFallback={handleScannerFileFallback}
     />
   </div></main>;
 }

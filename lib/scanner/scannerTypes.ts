@@ -35,6 +35,14 @@ export type ScannerEvent =
   | { type: "PREVIEW_RETAKE" }
   | { type: "CLOSE" };
 
+export type ScanSequence = "front-back" | "front-only" | "back-only";
+
+export type ScannerSession = {
+  activeSide: "front" | "back";
+  sequence: ScanSequence;
+  resetKey: number;
+};
+
 export type GuidedCaptureResult = {
   file: File;
   scanType: ScanType;

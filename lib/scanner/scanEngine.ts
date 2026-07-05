@@ -13,12 +13,16 @@ export {
   scannerPhaseLabel,
 } from "@/lib/scanner/scannerTypes";
 
+export { useBodyScrollLock } from "@/lib/scanner/useBodyScrollLock";
+
 export type {
   ScanType,
   CaptureMode,
   ScannerPhase,
   ScannerState,
   ScannerEvent,
+  ScanSequence,
+  ScannerSession,
   GuidedCaptureResult,
 } from "@/lib/scanner/scannerTypes";
 

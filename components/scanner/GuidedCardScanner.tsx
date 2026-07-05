@@ -7,12 +7,17 @@ import ScanTypeToggle from "@/components/scanner/ScanTypeToggle";
 import { scanTypeConfig } from "@/components/scanner/scanTypes";
 import { processGuidedCapture } from "@/lib/scanner/captureProcessor";
 import { scannerReducer } from "@/lib/scanner/scannerReducer";
+import { useBodyScrollLock } from "@/lib/scanner/useBodyScrollLock";
 import {
   initialScannerState,
   isCameraPhase,
   type CaptureMode,
   type GuidedCaptureResult,
+  type ScanSequence,
 } from "@/lib/scanner/scannerTypes";
+
+const scannerRootClass =
+  "fixed inset-0 z-[100] h-[100dvh] w-screen overflow-hidden overscroll-none bg-black text-white touch-none";
 
 function stopStream(stream: MediaStream | null) {
   stream?.getTracks().forEach((track) => track.stop());
@@ -20,16 +25,22 @@ function stopStream(stream: MediaStream | null) {
 
 export default function GuidedCardScanner({
   open,
-  side,
+  activeSide,
+  sequence,
+  resetKey,
   onClose,
-  onCapture,
+  onUseCapture,
+  onSkipBack,
   onFileFallback,
 }: {
   open: boolean;
-  side: "front" | "back";
+  activeSide: "front" | "back";
+  sequence: ScanSequence;
+  resetKey: number;
   onClose: () => void;
-  onCapture: (result: GuidedCaptureResult) => void;
-  onFileFallback: (file: File | null) => void;
+  onUseCapture: (result: GuidedCaptureResult, side: "front" | "back") => void;
+  onSkipBack?: () => void;
+  onFileFallback: (file: File | null, side: "front" | "back") => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -37,10 +48,12 @@ export default function GuidedCardScanner({
   const streamRef = useRef<MediaStream | null>(null);
   const [state, dispatch] = useReducer(scannerReducer, initialScannerState);
 
+  useBodyScrollLock(open);
+
   useEffect(() => {
     if (!open) return;
     dispatch({ type: "OPEN" });
-  }, [open, side]);
+  }, [open, activeSide, resetKey]);
 
   const cameraActive = open && state.phase !== "PREVIEW";
 
@@ -91,7 +104,7 @@ export default function GuidedCardScanner({
       stopStream(streamRef.current);
       streamRef.current = null;
     };
-  }, [cameraActive, side]);
+  }, [cameraActive, activeSide, resetKey]);
 
   async function runCapture(mode: CaptureMode) {
     if (!videoRef.current || state.phase === "CAPTURING") return;
@@ -127,60 +140,79 @@ export default function GuidedCardScanner({
 
   function useCapture() {
     if (!state.capturedFile) return;
-    onCapture({ file: state.capturedFile, scanType: state.scanType });
-    closeScanner();
+    onUseCapture({ file: state.capturedFile, scanType: state.scanType }, activeSide);
+  }
+
+  function handleLibraryFile(file: File | null) {
+    onFileFallback(file, activeSide);
   }
 
   if (!open) return null;
 
   const showCamera = isCameraPhase(state.phase) || state.phase === "ERROR";
+  const showSkipBack = activeSide === "back" && sequence === "front-back" && Boolean(onSkipBack);
+  const backInstruction = activeSide === "back" && sequence === "front-back"
+    ? "Now scan the back of the card."
+    : undefined;
 
-  return <div className="fixed inset-0 z-[100] bg-black text-white">
-    {showCamera && <div className="relative min-h-[100svh] overflow-hidden">
+  return <div className={scannerRootClass}>
+    {showCamera && <>
       <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 h-full w-full object-cover" />
       {state.phase !== "ERROR" && (
-        <GuideFrameOverlay scanType={state.scanType} overlayRef={overlayRef} phase={state.phase} />
+        <GuideFrameOverlay
+          scanType={state.scanType}
+          overlayRef={overlayRef}
+          phase={state.phase}
+          instruction={backInstruction}
+        />
       )}
 
-      <div className="absolute inset-x-0 top-0 flex items-center justify-between px-4 pb-6 pt-[max(1rem,env(safe-area-inset-top))]">
+      <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <button type="button" onClick={closeScanner} aria-label="Close scanner" className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-xl font-light backdrop-blur">×</button>
         <div className="text-center">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--gold-primary)]">ARCA Scan · {side}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--gold-primary)]">ARCA Scan · {activeSide}</p>
           <p className="mt-1 text-sm font-semibold">{scanTypeConfig[state.scanType].title}</p>
         </div>
-        <div className="h-11 w-11" aria-hidden />
-      </div>
-
-      {state.error && <div className="absolute inset-x-4 top-24 rounded-xl border border-[var(--status-warning)] bg-black/85 p-4 text-sm leading-6 shadow-xl backdrop-blur">
-        <p>{state.error}</p>
-        <button type="button" className="mt-3 text-[var(--gold-primary)] underline" onClick={() => fileInputRef.current?.click()}>Choose from library</button>
-      </div>}
-
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/90 to-transparent px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-16">
-        <div className="mb-4 flex justify-center">
+        <div className="flex h-11 w-11 items-center justify-center">
           <ScanTypeToggle
             value={state.scanType}
             onChange={(scanType) => dispatch({ type: "SET_SCAN_TYPE", scanType })}
             disabled={state.phase === "CAPTURING"}
           />
         </div>
+      </header>
 
-        <div className="mb-5 flex items-center justify-center gap-3">
+      {state.error && <div className="absolute inset-x-4 top-[calc(env(safe-area-inset-top)+4.5rem)] z-20 rounded-xl border border-[var(--status-warning)] bg-black/85 p-4 text-sm leading-6 shadow-xl backdrop-blur">
+        <p>{state.error}</p>
+        <button type="button" className="mt-3 text-[var(--gold-primary)] underline" onClick={() => fileInputRef.current?.click()}>Choose from library</button>
+      </div>}
+
+      <footer className="absolute inset-x-0 bottom-0 z-20 border-t border-white/10 bg-black/80 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-md">
+        <div className="mb-3 flex items-center justify-center gap-3">
           <button
             type="button"
             disabled
             title="Auto capture coming soon"
-            className="cursor-not-allowed rounded-full border border-white/10 bg-black/35 px-3 py-2 text-xs font-semibold text-white/40 backdrop-blur"
+            className="cursor-not-allowed rounded-full border border-white/10 bg-black/35 px-3 py-2 text-xs font-semibold text-white/40"
           >
             Auto Off
           </button>
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="rounded-full border border-white/20 bg-black/45 px-3 py-2 text-xs font-semibold text-white/85 backdrop-blur"
+            className="rounded-full border border-white/20 bg-black/45 px-3 py-2 text-xs font-semibold text-white/85"
           >
             Library
           </button>
+          {showSkipBack && (
+            <button
+              type="button"
+              onClick={() => onSkipBack?.()}
+              className="rounded-full border border-white/20 bg-black/45 px-3 py-2 text-xs font-semibold text-white/85"
+            >
+              Skip Back
+            </button>
+          )}
           <input
             ref={fileInputRef}
             type="file"
@@ -189,32 +221,32 @@ export default function GuidedCardScanner({
             onChange={(event) => {
               const file = event.target.files?.[0] ?? null;
               event.target.value = "";
-              onFileFallback(file);
-              closeScanner();
+              handleLibraryFile(file);
             }}
           />
         </div>
 
-        <div className="flex justify-center pb-2">
+        <div className="flex justify-center pb-1">
           <button
             type="button"
             disabled={state.phase === "CAPTURING" || state.phase === "INITIALIZING" || Boolean(state.error)}
             onClick={() => void runCapture("manual")}
-            className="relative flex h-20 w-20 items-center justify-center disabled:opacity-50"
+            className="relative flex h-[4.5rem] w-[4.5rem] items-center justify-center disabled:opacity-50"
             aria-label="Capture image"
           >
-            <span className="relative flex h-16 w-16 items-center justify-center rounded-full border-4 border-white bg-white/15 shadow-[0_0_0_6px_rgba(255,255,255,.12)]">
-              <span className="h-12 w-12 rounded-full bg-white" />
+            <span className="relative flex h-[3.75rem] w-[3.75rem] items-center justify-center rounded-full border-4 border-white bg-white/15 shadow-[0_0_0_6px_rgba(255,255,255,.12)]">
+              <span className="h-[2.75rem] w-[2.75rem] rounded-full bg-white" />
             </span>
           </button>
         </div>
-      </div>
-    </div>}
+      </footer>
+    </>}
 
     {state.phase === "PREVIEW" && state.previewUrl && (
       <ScanPreview
         previewUrl={state.previewUrl}
         scanType={state.scanType}
+        side={activeSide}
         onRetake={retake}
         onUse={useCapture}
       />

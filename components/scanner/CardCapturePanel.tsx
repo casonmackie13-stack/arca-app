@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/Button";
 import ArcaImage from "@/components/ui/ArcaImage";
+import type { ScanSequence } from "@/lib/scanner/scannerTypes";
 
 type CaptureSide = "front" | "back";
 
@@ -17,7 +19,7 @@ export default function CardCapturePanel({
   backPreview: string | null;
   frontProcessing: boolean;
   backProcessing: boolean;
-  onScan: (side: CaptureSide) => void;
+  onScan: (request: { side: CaptureSide; sequence: ScanSequence }) => void;
   onRemove: (side: CaptureSide) => void;
 }) {
   const [activeSide, setActiveSide] = useState<CaptureSide>("front");
@@ -36,6 +38,14 @@ export default function CardCapturePanel({
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [menuOpen]);
+
+  function openScanner() {
+    if (activeSide === "front") {
+      onScan({ side: "front", sequence: "front-back" });
+      return;
+    }
+    onScan({ side: "back", sequence: "back-only" });
+  }
 
   return <div className="space-y-5">
     <div className="flex items-center justify-between gap-3">
@@ -66,13 +76,20 @@ export default function CardCapturePanel({
         >
           ⋯
         </button>
-        {menuOpen && <div className="absolute right-0 top-11 z-20 min-w-[10rem] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--background)] shadow-lg">
+        {menuOpen && <div className="absolute right-0 top-11 z-20 min-w-[11rem] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--background)] shadow-lg">
           <button
             type="button"
             className="block w-full px-4 py-3 text-left text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--surface-hover)]"
-            onClick={() => { setMenuOpen(false); onScan(activeSide); }}
+            onClick={() => { setMenuOpen(false); onScan({ side: "front", sequence: "front-back" }); }}
           >
-            {hasImage ? "Rescan" : "Open camera"}
+            Scan front &amp; back
+          </button>
+          <button
+            type="button"
+            className="block w-full border-t border-[var(--border-subtle)] px-4 py-3 text-left text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--surface-hover)]"
+            onClick={() => { setMenuOpen(false); onScan({ side: "back", sequence: "back-only" }); }}
+          >
+            Scan back only
           </button>
           {hasImage && <button
             type="button"
@@ -85,16 +102,20 @@ export default function CardCapturePanel({
       </div>
     </div>
 
+    <Button variant="outline" className="w-full" disabled={processing} onClick={openScanner}>
+      {activeSide === "front" ? "Scan card" : "Scan back"}
+    </Button>
+
     <button
       type="button"
-      onClick={() => onScan(activeSide)}
+      onClick={openScanner}
       disabled={processing}
       className="group relative mx-auto block w-full max-w-sm touch-manipulation disabled:opacity-60"
       aria-label={activeSide === "front" ? "Scan front of card" : "Scan back of card"}
     >
       <div
         className={`relative overflow-hidden rounded-2xl border-2 transition ${hasImage ? "border-[var(--border-subtle)] bg-black" : "border-dashed border-[var(--border-strong)] bg-[var(--surface)] group-hover:border-[var(--gold-primary)] group-hover:bg-[var(--surface-hover)]"}`}
-        style={{ aspectRatio: activeSide === "front" ? "5 / 7" : "5 / 7" }}
+        style={{ aspectRatio: "5 / 7" }}
       >
         {preview ? (
           <ArcaImage src={preview} alt={`${activeSide} card preview`} className="object-contain" />
@@ -104,7 +125,9 @@ export default function CardCapturePanel({
               {activeSide === "front" ? "Scan front" : "Scan back"}
             </p>
             <p className="mt-2 text-xs leading-5 text-[var(--text-secondary)]">
-              Tap to open the camera{activeSide === "back" ? " · optional" : ""}
+              {activeSide === "front"
+                ? "Tap to scan front, then back"
+                : "Tap to scan back only · optional"}
             </p>
           </div>
         )}
@@ -119,7 +142,7 @@ export default function CardCapturePanel({
 
     <p className="text-center text-xs leading-5 text-[var(--text-tertiary)]">
       {activeSide === "front"
-        ? "Front image required · use Library inside the scanner if needed"
+        ? "Front scan continues automatically to the back · Library available inside scanner"
         : "Back image improves autofill · optional"}
     </p>
   </div>;
