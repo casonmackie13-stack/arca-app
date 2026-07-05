@@ -41,7 +41,6 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
   const router = useRouter();
   const searchParams = useSearchParams();
   const scanAutostart = searchParams.get("scan") === "1";
-  const autostartedRef = useRef(false);
   const stepHeadingRef = useRef<HTMLHeadingElement>(null);
   const imageProcessingId = useRef({ front: 0, back: 0 });
   const [currentStep, setCurrentStep] = useState(0);
@@ -59,7 +58,11 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
   const [backAnalysis, setBackAnalysis] = useState<CardDetectionAnalysis | null>(null);
   const [frontProcessing, setFrontProcessing] = useState(false);
   const [backProcessing, setBackProcessing] = useState(false);
-  const [scannerSession, setScannerSession] = useState<ScannerSession | null>(null);
+  const [scannerSession, setScannerSession] = useState<ScannerSession | null>(() => (
+    scanAutostart
+      ? { activeSide: "front", sequence: "front-back", resetKey: Date.now() }
+      : null
+  ));
   const [saving, setSaving] = useState(false);
   const [autofilling, setAutofilling] = useState(false);
   const [autofillMessage, setAutofillMessage] = useState("");
@@ -98,16 +101,6 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
   }, [initialCollectionId, router]);
 
   useEffect(() => () => { if (frontPreview) URL.revokeObjectURL(frontPreview); if (backPreview) URL.revokeObjectURL(backPreview); }, [frontPreview, backPreview]);
-
-  useEffect(() => {
-    if (!scanAutostart || autostartedRef.current) return;
-    autostartedRef.current = true;
-    setScannerSession({
-      activeSide: "front",
-      sequence: "front-back",
-      resetKey: Date.now(),
-    });
-  }, [scanAutostart]);
 
   function startScanner(request: { side: "front" | "back"; sequence: ScannerSession["sequence"] }) {
     setScannerSession({
