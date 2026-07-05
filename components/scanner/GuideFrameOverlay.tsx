@@ -20,7 +20,10 @@ export default function GuideFrameOverlay({
   const aspect = config.guideAspect;
 
   return <div className="pointer-events-none absolute inset-0 overflow-hidden">
-    <div className="absolute inset-x-0 top-[calc(env(safe-area-inset-top)+4.5rem)] z-10 px-4 text-center">
+    <div
+      className="absolute inset-x-0 z-10 px-4 text-center"
+      style={{ top: "calc(env(safe-area-inset-top) + 3.75rem)" }}
+    >
       {instruction && <p className="mx-auto mb-2 max-w-sm text-sm font-medium text-white/90">{instruction}</p>}
       <div className="mx-auto inline-flex max-w-sm rounded-full border border-white/15 bg-black/60 px-4 py-2 text-xs font-semibold text-white backdrop-blur">
         {scannerPhaseLabel(phase)}
@@ -30,14 +33,14 @@ export default function GuideFrameOverlay({
     <div
       className="absolute inset-x-0 flex items-center justify-center px-6"
       style={{
-        top: "calc(env(safe-area-inset-top) + 7rem)",
-        bottom: "calc(env(safe-area-inset-bottom) + 13.5rem)",
+        top: "calc(env(safe-area-inset-top) + 6.5rem)",
+        bottom: "calc(env(safe-area-inset-bottom) + 11.5rem)",
       }}
     >
       <div
         ref={overlayRef}
-        className="relative max-h-full rounded-[1.35rem] border-2 border-white opacity-100 shadow-[0_0_0_9999px_rgba(0,0,0,.42),0_0_28px_rgba(201,164,93,.28)] transition-all duration-200"
-        style={{ aspectRatio: aspect, width: "min(78vw, 100%)" }}
+        className="relative max-h-full max-w-full rounded-[1.35rem] border-2 border-white shadow-[0_0_0_9999px_rgba(0,0,0,.42),0_0_28px_rgba(201,164,93,.28)]"
+        style={{ aspectRatio: aspect, width: "min(72vw, 100%)" }}
       >
         <span className="absolute -left-1 -top-1 h-7 w-7 rounded-tl-[1.35rem] border-l-4 border-t-4 border-[var(--gold-primary)]" />
         <span className="absolute -right-1 -top-1 h-7 w-7 rounded-tr-[1.35rem] border-r-4 border-t-4 border-[var(--gold-primary)]" />

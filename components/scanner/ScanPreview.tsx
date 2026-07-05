@@ -21,23 +21,28 @@ export default function ScanPreview({
   const config = scanTypeConfig[scanType];
   const useLabel = side === "front" ? "Use Front" : "Use Back";
 
-  return <div className="absolute inset-0 flex h-[100dvh] w-full flex-col overflow-hidden bg-black text-white">
-    <div className="shrink-0 px-5 pb-3 pt-[max(1rem,env(safe-area-inset-top))]">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--gold-primary)]">ARCA Scan · {side}</p>
-      <h3 className="mt-2 text-2xl font-semibold tracking-[-0.03em]">{config.title}</h3>
-      <p className="mt-2 text-sm text-white/70">Review before continuing</p>
+  return <div className="absolute inset-0 flex max-h-[100dvh] flex-col overflow-hidden bg-black text-white">
+    <div
+      className="shrink-0 px-5 pb-2"
+      style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)" }}
+    >
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--gold-primary)]">Preview</p>
+      <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em]">{side === "front" ? "Scan Front" : "Scan Back"}</h3>
     </div>
 
-    <div className="flex min-h-0 flex-1 items-center justify-center px-5 py-2">
+    <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden px-5">
       <div
-        className="relative max-h-full w-full max-w-sm overflow-hidden rounded-2xl border border-white/15 bg-black shadow-[0_20px_60px_rgba(0,0,0,.45)]"
-        style={{ aspectRatio: config.guideAspect }}
+        className="relative max-h-full w-full max-w-sm overflow-hidden rounded-2xl border border-white/15 bg-black"
+        style={{ aspectRatio: config.guideAspect, maxHeight: "calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 10rem)" }}
       >
-        <ArcaImage src={previewUrl} alt={`${side} capture preview`} className="object-contain" />
+        <ArcaImage src={previewUrl} alt={`${side} capture preview`} className="h-full w-full object-contain" />
       </div>
     </div>
 
-    <div className="shrink-0 grid gap-3 border-t border-white/10 bg-black/90 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur sm:grid-cols-2">
+    <div
+      className="shrink-0 grid gap-3 border-t border-white/10 bg-black/90 p-4 backdrop-blur sm:grid-cols-2"
+      style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)" }}
+    >
       <Button variant="secondary" size="lg" className="w-full" onClick={onRetake}>Retake</Button>
       <Button size="lg" className="w-full" onClick={onUse}>{useLabel}</Button>
     </div>

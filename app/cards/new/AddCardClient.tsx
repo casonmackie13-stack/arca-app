@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import AddCardProgress from "@/components/card/AddCardProgress";
 import CardFields from "@/components/card/CardFields";
 import FlippableCard from "@/components/card/FlippableCard";
@@ -39,6 +39,9 @@ const steps = ["Capture image", "Card details", "Condition", "Collection", "Valu
 
 export default function AddCardClient({ initialCollectionId }: { initialCollectionId?: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const scanAutostart = searchParams.get("scan") === "1";
+  const autostartedRef = useRef(false);
   const stepHeadingRef = useRef<HTMLHeadingElement>(null);
   const imageProcessingId = useRef({ front: 0, back: 0 });
   const [currentStep, setCurrentStep] = useState(0);
@@ -95,6 +98,16 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
   }, [initialCollectionId, router]);
 
   useEffect(() => () => { if (frontPreview) URL.revokeObjectURL(frontPreview); if (backPreview) URL.revokeObjectURL(backPreview); }, [frontPreview, backPreview]);
+
+  useEffect(() => {
+    if (!scanAutostart || autostartedRef.current) return;
+    autostartedRef.current = true;
+    setScannerSession({
+      activeSide: "front",
+      sequence: "front-back",
+      resetKey: Date.now(),
+    });
+  }, [scanAutostart]);
 
   function startScanner(request: { side: "front" | "back"; sequence: ScannerSession["sequence"] }) {
     setScannerSession({
@@ -395,7 +408,8 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
     </div>;
   }
 
-  return <main className="page-container cinematic-enter"><div className="detail-container">
+  return <>
+    {!scannerOpen && <main className="page-container cinematic-enter"><div className="detail-container">
     <PageHeader backHref="/collections" backLabel="Vault"/>
     <p className="eyebrow">New acquisition</p>
     <h1 className="display-l mt-3">Catalogue a card</h1>
@@ -448,6 +462,8 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
         </div>
       </section>
     </div>
+    </div></main>}
+
     <QuickCollectionDialog open={quickCreateOpen} onClose={() => setQuickCreateOpen(false)} onCreated={handleCollectionCreated}/>
     <GuidedCardScanner
       key={scannerSession ? `${scannerSession.activeSide}-${scannerSession.resetKey}` : "idle"}
@@ -460,5 +476,5 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
       onSkipBack={scannerSession?.sequence === "front-back" ? closeScanner : undefined}
       onFileFallback={handleScannerFileFallback}
     />
-  </div></main>;
+  </>;
 }

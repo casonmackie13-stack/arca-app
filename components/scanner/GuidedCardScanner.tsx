@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useReducer, useRef } from "react";
+import { useEffect, useReducer, useRef, type CSSProperties } from "react";
 import GuideFrameOverlay from "@/components/scanner/GuideFrameOverlay";
 import ScanPreview from "@/components/scanner/ScanPreview";
+import ScannerPortal from "@/components/scanner/ScannerPortal";
 import ScanTypeToggle from "@/components/scanner/ScanTypeToggle";
-import { scanTypeConfig } from "@/components/scanner/scanTypes";
 import { processGuidedCapture } from "@/lib/scanner/captureProcessor";
 import { scannerReducer } from "@/lib/scanner/scannerReducer";
 import { useBodyScrollLock } from "@/lib/scanner/useBodyScrollLock";
@@ -16,11 +16,25 @@ import {
   type ScanSequence,
 } from "@/lib/scanner/scannerTypes";
 
-const scannerRootClass =
-  "fixed inset-0 z-[100] h-[100dvh] w-screen overflow-hidden overscroll-none bg-black text-white touch-none";
+const scannerRootStyle: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  width: "100vw",
+  height: "100dvh",
+  maxHeight: "100dvh",
+  overflow: "hidden",
+  background: "#000",
+  zIndex: 200,
+  touchAction: "none",
+  overscrollBehavior: "none",
+};
 
 function stopStream(stream: MediaStream | null) {
   stream?.getTracks().forEach((track) => track.stop());
+}
+
+function sideLabel(side: "front" | "back") {
+  return side === "front" ? "Scan Front" : "Scan Back";
 }
 
 export default function GuidedCardScanner({
@@ -55,7 +69,7 @@ export default function GuidedCardScanner({
     dispatch({ type: "OPEN" });
   }, [open, activeSide, resetKey]);
 
-  const cameraActive = open && state.phase !== "PREVIEW";
+  const cameraActive = open && state.phase !== "PREVIEW" && state.phase !== "ERROR";
 
   useEffect(() => {
     if (!cameraActive) return;
@@ -92,7 +106,7 @@ export default function GuidedCardScanner({
       } catch (cause) {
         if (!active) return;
         const message = cause instanceof DOMException && cause.name === "NotAllowedError"
-          ? "Camera permission was denied. Choose a photo from your library instead."
+          ? "Camera permission was denied."
           : cause instanceof Error ? cause.message : "Camera is unavailable.";
         dispatch({ type: "CAMERA_ERROR", message });
       }
@@ -143,52 +157,94 @@ export default function GuidedCardScanner({
     onUseCapture({ file: state.capturedFile, scanType: state.scanType }, activeSide);
   }
 
-  function handleLibraryFile(file: File | null) {
-    onFileFallback(file, activeSide);
-  }
-
   if (!open) return null;
 
-  const showCamera = isCameraPhase(state.phase) || state.phase === "ERROR";
+  const showCamera = isCameraPhase(state.phase);
   const showSkipBack = activeSide === "back" && sequence === "front-back" && Boolean(onSkipBack);
   const backInstruction = activeSide === "back" && sequence === "front-back"
     ? "Now scan the back of the card."
     : undefined;
 
-  return <div className={scannerRootClass}>
-    {showCamera && <>
-      <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 h-full w-full object-cover" />
-      {state.phase !== "ERROR" && (
-        <GuideFrameOverlay
-          scanType={state.scanType}
-          overlayRef={overlayRef}
-          phase={state.phase}
-          instruction={backInstruction}
+  const content = <div style={scannerRootStyle} className="text-white">
+    {state.phase === "ERROR" && (
+      <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--gold-primary)]">ARCA Scan</p>
+        <h2 className="mt-4 text-2xl font-semibold">Camera unavailable</h2>
+        <p className="mt-3 max-w-sm text-sm leading-6 text-white/70">{state.error}</p>
+        <div className="mt-8 flex w-full max-w-xs flex-col gap-3">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="rounded-full bg-[var(--gold-primary)] px-5 py-3 text-sm font-semibold text-black"
+          >
+            Choose from Library
+          </button>
+          <button
+            type="button"
+            onClick={closeScanner}
+            className="rounded-full border border-white/25 px-5 py-3 text-sm font-semibold text-white"
+          >
+            Close
+          </button>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0] ?? null;
+            event.target.value = "";
+            onFileFallback(file, activeSide);
+          }}
         />
+      </div>
+    )}
+
+    {showCamera && <>
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        className="absolute inset-0 h-full w-full object-cover"
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+      />
+      <GuideFrameOverlay
+        scanType={state.scanType}
+        overlayRef={overlayRef}
+        phase={state.phase}
+        instruction={backInstruction}
+      />
+
+      <header
+        className="absolute inset-x-0 top-0 z-20 flex items-center justify-between bg-gradient-to-b from-black/70 to-transparent px-4 pb-4"
+        style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)" }}
+      >
+        <button type="button" onClick={closeScanner} aria-label="Close scanner" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/50 text-xl font-light backdrop-blur">×</button>
+        <p className="text-sm font-semibold tracking-[-0.01em]">{sideLabel(activeSide)}</p>
+        <div className="h-11 w-11 shrink-0" aria-hidden />
+      </header>
+
+      {state.error && state.phase !== "ERROR" && (
+        <div className="absolute inset-x-4 top-[calc(env(safe-area-inset-top)+4rem)] z-20 rounded-xl border border-[var(--status-warning)] bg-black/85 p-4 text-sm leading-6 shadow-xl backdrop-blur">
+          <p>{state.error}</p>
+        </div>
       )}
 
-      <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
-        <button type="button" onClick={closeScanner} aria-label="Close scanner" className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-xl font-light backdrop-blur">×</button>
-        <div className="text-center">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--gold-primary)]">ARCA Scan · {activeSide}</p>
-          <p className="mt-1 text-sm font-semibold">{scanTypeConfig[state.scanType].title}</p>
-        </div>
-        <div className="flex h-11 w-11 items-center justify-center">
+      <footer
+        className="absolute inset-x-0 bottom-0 z-20 border-t border-white/10 bg-black/85 backdrop-blur-md"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)", paddingTop: "12px", paddingLeft: "16px", paddingRight: "16px" }}
+      >
+        <div className="mb-3 flex justify-center">
           <ScanTypeToggle
             value={state.scanType}
             onChange={(scanType) => dispatch({ type: "SET_SCAN_TYPE", scanType })}
             disabled={state.phase === "CAPTURING"}
           />
         </div>
-      </header>
 
-      {state.error && <div className="absolute inset-x-4 top-[calc(env(safe-area-inset-top)+4.5rem)] z-20 rounded-xl border border-[var(--status-warning)] bg-black/85 p-4 text-sm leading-6 shadow-xl backdrop-blur">
-        <p>{state.error}</p>
-        <button type="button" className="mt-3 text-[var(--gold-primary)] underline" onClick={() => fileInputRef.current?.click()}>Choose from library</button>
-      </div>}
-
-      <footer className="absolute inset-x-0 bottom-0 z-20 border-t border-white/10 bg-black/80 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-md">
-        <div className="mb-3 flex items-center justify-center gap-3">
+        <div className="mb-3 flex flex-wrap items-center justify-center gap-2">
           <button
             type="button"
             disabled
@@ -221,21 +277,21 @@ export default function GuidedCardScanner({
             onChange={(event) => {
               const file = event.target.files?.[0] ?? null;
               event.target.value = "";
-              handleLibraryFile(file);
+              onFileFallback(file, activeSide);
             }}
           />
         </div>
 
-        <div className="flex justify-center pb-1">
+        <div className="flex justify-center">
           <button
             type="button"
-            disabled={state.phase === "CAPTURING" || state.phase === "INITIALIZING" || Boolean(state.error)}
+            disabled={state.phase === "CAPTURING" || state.phase === "INITIALIZING"}
             onClick={() => void runCapture("manual")}
-            className="relative flex h-[4.5rem] w-[4.5rem] items-center justify-center disabled:opacity-50"
+            className="relative flex h-[4.25rem] w-[4.25rem] items-center justify-center disabled:opacity-50"
             aria-label="Capture image"
           >
-            <span className="relative flex h-[3.75rem] w-[3.75rem] items-center justify-center rounded-full border-4 border-white bg-white/15 shadow-[0_0_0_6px_rgba(255,255,255,.12)]">
-              <span className="h-[2.75rem] w-[2.75rem] rounded-full bg-white" />
+            <span className="relative flex h-[3.5rem] w-[3.5rem] items-center justify-center rounded-full border-4 border-white bg-white/15 shadow-[0_0_0_6px_rgba(255,255,255,.12)]">
+              <span className="h-[2.5rem] w-[2.5rem] rounded-full bg-white" />
             </span>
           </button>
         </div>
@@ -252,4 +308,6 @@ export default function GuidedCardScanner({
       />
     )}
   </div>;
+
+  return <ScannerPortal open={open}>{content}</ScannerPortal>;
 }
