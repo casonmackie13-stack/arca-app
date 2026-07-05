@@ -21,31 +21,31 @@ export default function GuideFrameOverlay({
 
   return <div className="pointer-events-none absolute inset-0 overflow-hidden">
     <div
-      className="absolute inset-x-0 z-10 px-4 text-center"
-      style={{ top: "calc(env(safe-area-inset-top) + 3.75rem)" }}
-    >
-      {instruction && <p className="mx-auto mb-2 max-w-sm text-sm font-medium text-white/90">{instruction}</p>}
-      <div className="mx-auto inline-flex max-w-sm rounded-full border border-white/15 bg-black/60 px-4 py-2 text-xs font-semibold text-white backdrop-blur">
-        {scannerPhaseLabel(phase)}
-      </div>
-    </div>
-
-    <div
-      className="absolute inset-x-0 flex items-center justify-center px-6"
+      className="absolute inset-x-0 flex flex-col items-center justify-center px-6"
       style={{
-        top: "calc(env(safe-area-inset-top) + 6.5rem)",
-        bottom: "calc(env(safe-area-inset-bottom) + 11.5rem)",
+        top: "var(--scanner-top-reserved, calc(env(safe-area-inset-top) + 4.5rem))",
+        height: "var(--scanner-usable-height, calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 14rem))",
+        paddingBottom: "var(--scanner-frame-clearance, 20px)",
       }}
     >
-      <div
-        ref={overlayRef}
-        className="relative max-h-full max-w-full rounded-[1.35rem] border-2 border-white shadow-[0_0_0_9999px_rgba(0,0,0,.42),0_0_28px_rgba(201,164,93,.28)]"
-        style={{ aspectRatio: aspect, width: "min(72vw, 100%)" }}
-      >
-        <span className="absolute -left-1 -top-1 h-7 w-7 rounded-tl-[1.35rem] border-l-4 border-t-4 border-[var(--gold-primary)]" />
-        <span className="absolute -right-1 -top-1 h-7 w-7 rounded-tr-[1.35rem] border-r-4 border-t-4 border-[var(--gold-primary)]" />
-        <span className="absolute -bottom-1 -left-1 h-7 w-7 rounded-bl-[1.35rem] border-b-4 border-l-4 border-[var(--gold-primary)]" />
-        <span className="absolute -bottom-1 -right-1 h-7 w-7 rounded-br-[1.35rem] border-b-4 border-r-4 border-[var(--gold-primary)]" />
+      <div className="mb-3 w-full shrink-0 text-center">
+        {instruction && <p className="mx-auto mb-2 max-w-sm text-sm font-medium text-white/90">{instruction}</p>}
+        <div className="mx-auto inline-flex max-w-sm rounded-full border border-white/15 bg-black/60 px-4 py-2 text-xs font-semibold text-white backdrop-blur">
+          {scannerPhaseLabel(phase)}
+        </div>
+      </div>
+
+      <div className="flex min-h-0 w-full flex-1 items-center justify-center">
+        <div
+          ref={overlayRef}
+          className="relative max-h-full max-w-full rounded-[1.35rem] border-2 border-white shadow-[0_0_0_9999px_rgba(0,0,0,.42),0_0_28px_rgba(201,164,93,.28)]"
+          style={{ aspectRatio: aspect, width: "min(72vw, 100%)", height: "auto" }}
+        >
+          <span className="absolute -left-1 -top-1 h-7 w-7 rounded-tl-[1.35rem] border-l-4 border-t-4 border-[var(--gold-primary)]" />
+          <span className="absolute -right-1 -top-1 h-7 w-7 rounded-tr-[1.35rem] border-r-4 border-t-4 border-[var(--gold-primary)]" />
+          <span className="absolute -bottom-1 -left-1 h-7 w-7 rounded-bl-[1.35rem] border-b-4 border-l-4 border-[var(--gold-primary)]" />
+          <span className="absolute -bottom-1 -right-1 h-7 w-7 rounded-br-[1.35rem] border-b-4 border-r-4 border-[var(--gold-primary)]" />
+        </div>
       </div>
     </div>
   </div>;

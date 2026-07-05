@@ -8,6 +8,7 @@ import ScanTypeToggle from "@/components/scanner/ScanTypeToggle";
 import { processGuidedCapture } from "@/lib/scanner/captureProcessor";
 import { scannerReducer } from "@/lib/scanner/scannerReducer";
 import { useBodyScrollLock } from "@/lib/scanner/useBodyScrollLock";
+import { useScannerSafeArea } from "@/lib/scanner/useScannerSafeArea";
 import {
   initialScannerState,
   isCameraPhase,
@@ -58,18 +59,21 @@ export default function GuidedCardScanner({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const footerRef = useRef<HTMLElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [state, dispatch] = useReducer(scannerReducer, initialScannerState);
 
   useBodyScrollLock(open);
 
+  const cameraActive = open && state.phase !== "PREVIEW" && state.phase !== "ERROR";
+  const safeAreaRootRef = useScannerSafeArea(cameraActive && isCameraPhase(state.phase), headerRef, footerRef);
+
   useEffect(() => {
     if (!open) return;
     dispatch({ type: "OPEN" });
   }, [open, activeSide, resetKey]);
-
-  const cameraActive = open && state.phase !== "PREVIEW" && state.phase !== "ERROR";
 
   useEffect(() => {
     if (!cameraActive) return;
@@ -165,7 +169,7 @@ export default function GuidedCardScanner({
     ? "Now scan the back of the card."
     : undefined;
 
-  const content = <div style={scannerRootStyle} className="text-white">
+  const content = <div ref={safeAreaRootRef} style={scannerRootStyle} className="text-white">
     {state.phase === "ERROR" && (
       <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--gold-primary)]">ARCA Scan</p>
@@ -218,6 +222,7 @@ export default function GuidedCardScanner({
       />
 
       <header
+        ref={headerRef}
         className="absolute inset-x-0 top-0 z-20 flex items-center justify-between bg-gradient-to-b from-black/70 to-transparent px-4 pb-4"
         style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)" }}
       >
@@ -233,6 +238,7 @@ export default function GuidedCardScanner({
       )}
 
       <footer
+        ref={footerRef}
         className="absolute inset-x-0 bottom-0 z-20 border-t border-white/10 bg-black/85 backdrop-blur-md"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)", paddingTop: "12px", paddingLeft: "16px", paddingRight: "16px" }}
       >
