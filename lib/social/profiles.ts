@@ -111,8 +111,25 @@ export async function getOwnUserCards(userId: string) {
 }
 
 export async function countPublicUserCards(userId: string) {
-  const cards = await getPublicUserCards(userId);
-  return cards.length;
+  const { data: publicCollections, error: collectionsError } = await supabase
+    .from("collections")
+    .select("id")
+    .eq("owner_id", userId)
+    .eq("visibility", "public");
+
+  if (collectionsError) throw collectionsError;
+
+  const publicCollectionIds = (publicCollections || []).map((collection) => collection.id);
+  if (!publicCollectionIds.length) return 0;
+
+  const { count, error } = await supabase
+    .from("cards")
+    .select("id", { count: "exact", head: true })
+    .eq("owner_id", userId)
+    .in("collection_id", publicCollectionIds);
+
+  if (error) throw error;
+  return count || 0;
 }
 
 export async function countPublicUserCollections(userId: string) {

@@ -114,7 +114,7 @@ export default function PublicProfilePage() {
 
     <section className="mt-16 pb-8">
       <SectionHeader eyebrow="Catalogue" title={isSelf ? "Your cards" : "Public cards"} />
-      {cards.length ? <div className="mt-7 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{cards.map((card, index) => <CardTile key={card.id} card={card} index={index}/>)}</div> : <div className="mt-7"><EmptyState title="No cards to show" description={isSelf ? "Catalogue cards in public collections or leave cards unassigned to share them publicly." : "This collector has not shared any public cards yet."}/></div>}
+      {cards.length ? <div className="mt-7 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{cards.map((card, index) => <CardTile key={card.id} card={card} index={index}/>)}</div> : <div className="mt-7"><EmptyState title="No cards to show" description={isSelf ? "Add cards to a public collection to share them on your profile." : "This collector has not shared any public cards yet."}/></div>}
     </section>
   </main>;
 }
