@@ -26,13 +26,13 @@ export default function GuideFrameOverlay({
       >
         <div
           ref={overlayRef}
-          className="relative rounded-[1.35rem] border-2 border-white shadow-[0_0_0_9999px_rgba(0,0,0,.42),0_0_28px_rgba(201,164,93,.28)]"
+          className="relative box-border rounded-[1.35rem] border-2 border-white shadow-[0_0_0_9999px_rgba(0,0,0,.42),0_0_28px_rgba(201,164,93,.28)]"
           style={{
-            aspectRatio: config.guideAspect,
-            maxWidth: "100%",
+            width: "var(--scanner-frame-width)",
+            height: "var(--scanner-frame-height)",
+            maxWidth: "calc(100% - 2rem)",
             maxHeight: "100%",
-            width: "auto",
-            height: "auto",
+            aspectRatio: config.guideAspect,
           }}
         >
           <span className="absolute -left-1 -top-1 h-7 w-7 rounded-tl-[1.35rem] border-l-4 border-t-4 border-[var(--gold-primary)]" />

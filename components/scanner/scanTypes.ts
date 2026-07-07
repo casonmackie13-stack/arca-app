@@ -32,7 +32,7 @@ export const scanTypeConfig: Record<ScanType, {
     description: "PSA, BGS, SGC, or other slab",
     guidance: "Fit the entire slab inside the frame, including label",
     output: { width: 1000, height: 1600 },
-    guideAspect: "1000 / 1600",
-    aspectRatio: 1000 / 1600,
+    guideAspect: "5 / 8",
+    aspectRatio: 5 / 8,
   },
 };

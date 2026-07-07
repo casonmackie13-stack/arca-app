@@ -4,6 +4,7 @@ import { useEffect, useReducer, useRef, type CSSProperties } from "react";
 import GuideFrameOverlay from "@/components/scanner/GuideFrameOverlay";
 import ScanPreview from "@/components/scanner/ScanPreview";
 import ScannerPortal from "@/components/scanner/ScannerPortal";
+import ScannerDebugOverlay from "@/components/scanner/ScannerDebugOverlay";
 import ScanTypeToggle from "@/components/scanner/ScanTypeToggle";
 import { processGuidedCapture } from "@/lib/scanner/captureProcessor";
 import { acquireCameraStream } from "@/lib/scanner/cameraConstraints";
@@ -70,7 +71,7 @@ export default function GuidedCardScanner({
   useBodyScrollLock(open);
 
   const cameraActive = open && state.phase !== "PREVIEW" && state.phase !== "ERROR";
-  const safeAreaRootRef = useScannerSafeArea(cameraActive && isCameraPhase(state.phase), headerRef, footerRef);
+  const safeAreaRootRef = useScannerSafeArea(cameraActive && isCameraPhase(state.phase), headerRef, footerRef, state.scanType);
 
   useEffect(() => {
     if (!open) return;
@@ -220,6 +221,12 @@ export default function GuidedCardScanner({
       <GuideFrameOverlay
         scanType={state.scanType}
         overlayRef={overlayRef}
+      />
+      <ScannerDebugOverlay
+        videoRef={videoRef}
+        guideFrameRef={overlayRef}
+        scanType={state.scanType}
+        active={showCamera}
       />
 
       <header
