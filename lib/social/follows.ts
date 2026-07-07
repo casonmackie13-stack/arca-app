@@ -88,3 +88,55 @@ export async function unfollowUser(viewerId: string, targetUserId: string) {
 
   if (error) throw error;
 }
+
+const profileListFields = "id,username,display_name,bio,rank,avatar_url";
+
+export async function getUserFollowers(profileId: string) {
+  const { data, error } = await supabase
+    .from("user_follows")
+    .select("follower_id, created_at")
+    .eq("following_id", profileId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+
+  const ids = (data || []).map((row) => row.follower_id).filter(Boolean);
+  if (!ids.length) return [];
+
+  const { data: profiles, error: profilesError } = await supabase
+    .from("profiles")
+    .select(profileListFields)
+    .in("id", ids);
+
+  if (profilesError) throw profilesError;
+
+  const profileMap = new Map((profiles || []).map((profile) => [profile.id, profile]));
+  return ids
+    .map((id) => profileMap.get(id))
+    .filter(Boolean) as Array<{ id: string; username: string | null; display_name: string | null; bio: string | null; rank: string | null; avatar_url: string | null }>;
+}
+
+export async function getUserFollowing(profileId: string) {
+  const { data, error } = await supabase
+    .from("user_follows")
+    .select("following_id, created_at")
+    .eq("follower_id", profileId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+
+  const ids = (data || []).map((row) => row.following_id).filter(Boolean);
+  if (!ids.length) return [];
+
+  const { data: profiles, error: profilesError } = await supabase
+    .from("profiles")
+    .select(profileListFields)
+    .in("id", ids);
+
+  if (profilesError) throw profilesError;
+
+  const profileMap = new Map((profiles || []).map((profile) => [profile.id, profile]));
+  return ids
+    .map((id) => profileMap.get(id))
+    .filter(Boolean) as Array<{ id: string; username: string | null; display_name: string | null; bio: string | null; rank: string | null; avatar_url: string | null }>;
+}

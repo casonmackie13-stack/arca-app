@@ -69,4 +69,5 @@ export type CollectorProfile = {
   display_name?: string | null;
   bio?: string | null;
   rank?: string | null;
+  avatar_url?: string | null;
 };

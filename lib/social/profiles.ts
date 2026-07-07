@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabase";
 import type { CardSummary, CollectionSummary, CollectorProfile } from "@/lib/types";
 import { normalizeUsername, validateBio, validateDisplayName, validateUsername } from "@/lib/username";
 
-const profileFields = "id,username,display_name,bio,rank";
+const profileFields = "id,username,display_name,bio,rank,avatar_url";
 const collectionFields = "id,owner_id,name,category,visibility,description,cover_image_url,created_at";
 const cardFields = "id,owner_id,collection_id,created_at,player_name,sport,year,brand,set_name,card_number,grader,grade,estimated_value,status,display_image_url,front_image_url,back_image_url,collection:collections(id,name)";
 
@@ -10,6 +10,7 @@ export type ProfileFormValue = {
   username: string;
   display_name: string;
   bio: string;
+  avatar_url?: string | null;
 };
 
 export function validateProfileForm(value: ProfileFormValue) {
@@ -36,6 +37,7 @@ export async function updateProfile(userId: string, value: ProfileFormValue) {
     username: normalizeUsername(value.username),
     display_name: value.display_name.trim(),
     bio: value.bio.trim() || null,
+    ...(value.avatar_url !== undefined ? { avatar_url: value.avatar_url } : {}),
   };
 
   const { data, error } = await supabase

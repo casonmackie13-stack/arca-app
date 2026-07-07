@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import ProfileAvatar from "@/components/profile/ProfileAvatar";
+import ProfileRankBadge from "@/components/profile/ProfileRankBadge";
 import FollowButton from "@/components/profile/FollowButton";
 import type { ExploreCollector } from "@/lib/social/explore";
 import { profilePath } from "@/lib/username";
@@ -29,6 +30,7 @@ export default function ProfilePreviewCard({
         <div className="min-w-0">
           <p className="font-display text-2xl leading-none">{displayName}</p>
           <p className="mt-1 text-sm text-[var(--text-tertiary)]">@{username}</p>
+          <div className="mt-2"><ProfileRankBadge rank={profile.rank} /></div>
         </div>
       </Link>
       {profile.bio && <p className="line-clamp-2 text-sm leading-6 text-[var(--text-secondary)]">{profile.bio}</p>}

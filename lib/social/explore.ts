@@ -86,7 +86,7 @@ export async function getExploreCollectors(limit = 8) {
   const ownerIds = orderedOwnerIds.slice(0, limit);
   const { data: profiles, error: profilesError } = await supabase
     .from("profiles")
-    .select("id,username,display_name,bio,rank")
+    .select("id,username,display_name,bio,rank,avatar_url")
     .in("id", ownerIds);
 
   if (profilesError) throw profilesError;
@@ -110,7 +110,7 @@ export async function getSuggestedProfiles(limit = 8) {
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("id,username,display_name,bio,rank")
+    .select("id,username,display_name,bio,rank,avatar_url")
     .not("username", "is", null)
     .order("username", { ascending: true })
     .limit(limit);

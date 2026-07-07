@@ -10,9 +10,11 @@ import { LogoutIcon } from "@/components/ui/Icons";
 import { LoadingState, Panel, Stat } from "@/components/ui/Surface";
 import { PageHeader, SectionHeader } from "@/components/ui/PageHeader";
 import ProfileAvatar from "@/components/profile/ProfileAvatar";
+import ProfileRankBadge from "@/components/profile/ProfileRankBadge";
 import { getFollowCounts } from "@/lib/social/follows";
 import { countPublicUserCards, countPublicUserCollections } from "@/lib/social/profiles";
 import { profilePath } from "@/lib/username";
+import Link from "next/link";
 
 const ranks = ["I","II","III","IV","V","VI","VII","VIII","IX","X","XI","XII","XIII"];
 
@@ -80,14 +82,23 @@ export default function ProfilePage() {
         <p className="eyebrow">Collector profile</p>
         <h1 className="display-l mt-3">{profile?.display_name || username}</h1>
         <p className="mt-2 text-sm font-semibold text-[var(--text-tertiary)]">@{username}</p>
-        <p className="mt-3 max-w-xl text-base leading-7 text-[var(--text-secondary)]">{profile?.bio || "Collector. Curator. Custodian of the archive."}</p>
+        <div className="mt-3"><ProfileRankBadge rank={profile?.rank} /></div>
+        {profile?.bio ? (
+          <p className="mt-3 max-w-xl text-base leading-7 text-[var(--text-secondary)]">{profile.bio}</p>
+        ) : (
+          <p className="mt-3 max-w-xl text-base leading-7 text-[var(--text-tertiary)] italic">No bio yet.</p>
+        )}
         <div className="mt-5 flex flex-wrap gap-2">
           <ButtonLink href="/profile/edit" variant="secondary" size="sm">Edit profile</ButtonLink>
           {profile?.username && <ButtonLink href={profilePath(profile.username)} variant="outline" size="sm">View public profile</ButtonLink>}
         </div>
         <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-sm">
-          <span><strong className="tabular-nums">{followCounts.followers}</strong> <span className="text-[var(--text-tertiary)]">followers</span></span>
-          <span><strong className="tabular-nums">{followCounts.following}</strong> <span className="text-[var(--text-tertiary)]">following</span></span>
+          <Link href={`${profilePath(username)}/followers`} className="transition-colors hover:text-[var(--gold-primary)]">
+            <strong className="tabular-nums">{followCounts.followers}</strong> <span className="text-[var(--text-tertiary)]">followers</span>
+          </Link>
+          <Link href={`${profilePath(username)}/following`} className="transition-colors hover:text-[var(--gold-primary)]">
+            <strong className="tabular-nums">{followCounts.following}</strong> <span className="text-[var(--text-tertiary)]">following</span>
+          </Link>
           <span><strong className="tabular-nums">{publicCardCount}</strong> <span className="text-[var(--text-tertiary)]">public cards</span></span>
           <span><strong className="tabular-nums">{publicCollectionCount}</strong> <span className="text-[var(--text-tertiary)]">public collections</span></span>
         </div>
