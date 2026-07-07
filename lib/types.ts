@@ -24,7 +24,7 @@ export type CardSummary = {
   created_at?: string;
   player_name: string;
   sport?: string | null;
-  year?: string | number | null;
+  year?: string | null;
   brand?: string | null;
   set_name?: string | null;
   card_number?: string | null;

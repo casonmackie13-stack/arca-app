@@ -33,6 +33,7 @@ import type { CardAutofillResponse, CardImageLookupResponse, CardSalesResponse, 
 import { salePrice } from "@/lib/card-sales";
 import { analyzeCardImage, type CardDetectionAnalysis } from "@/lib/image-processing/cardDetection";
 import { formatCardImage } from "@/lib/image-processing/cardFormatting";
+import { normalizeCardYear } from "@/lib/card-year";
 import type { GuidedCaptureResult, ScannerSession, ScanType } from "@/lib/scanner/scannerTypes";
 
 const steps = ["Capture image", "Card details", "Condition", "Collection", "Value", "Review & save"] as const;
@@ -244,7 +245,7 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
         ...current,
         playerName: current.playerName || ai.player_name,
         sport: current.sport === "Basketball" ? (ai.sport || current.sport) : current.sport,
-        year: current.year || ai.year,
+        year: current.year || (ai.year ? normalizeCardYear(ai.year) : ""),
         brand: current.brand || ai.brand,
         setName: current.setName || ai.set_name,
         cardNumber: current.cardNumber || ai.card_number,

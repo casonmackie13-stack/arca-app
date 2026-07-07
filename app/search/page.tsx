@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import type { CardSummary, CollectionSummary } from "@/lib/types";
+import { cardYearSortValue } from "@/lib/card-year";
 import CardTile from "@/components/card/CardTile";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Form";
@@ -91,7 +92,7 @@ export default function SearchPage() {
       && (gradeMode === "all" || (gradeMode === "raw" ? raw : !raw));
   }).sort((a, b) => {
     if (sort === "value") return (Number(b.estimated_value) || 0) - (Number(a.estimated_value) || 0);
-    if (sort === "year") return (Number(b.year) || 0) - (Number(a.year) || 0);
+    if (sort === "year") return cardYearSortValue(b.year) - cardYearSortValue(a.year);
     if (sort === "player") return a.player_name.localeCompare(b.player_name, undefined, { sensitivity: "base" });
     return String(b.created_at || "").localeCompare(String(a.created_at || ""));
   }), [cards, collectionId, gradeMode, grader, normalizedQuery, sort, status]);
