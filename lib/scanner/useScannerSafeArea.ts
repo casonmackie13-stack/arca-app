@@ -1,22 +1,31 @@
 "use client";
 
-import { useEffect, useRef, type RefObject } from "react";
+import { useLayoutEffect, useRef, type RefObject } from "react";
 import { scanTypeConfig } from "@/components/scanner/scanTypes";
 import { computeGuideFrameSize } from "@/lib/scanner/cropMapping";
+import { scanFlowLog } from "@/lib/scanner/scanFlowLog";
 import type { ScanType } from "@/lib/scanner/scannerTypes";
 
 const FRAME_CLEARANCE_PX = 20;
+const MIN_FRAME_WIDTH = 200;
+
+export const SCANNER_CSS_DEFAULTS = {
+  "--scanner-top-reserved": "calc(env(safe-area-inset-top) + 72px)",
+  "--scanner-bottom-reserved": "calc(env(safe-area-inset-bottom) + 220px)",
+  "--scanner-frame-width": "280px",
+  "--scanner-frame-height": "392px",
+} as Record<string, string>;
 
 export function useScannerSafeArea(
-  active: boolean,
+  open: boolean,
   headerRef: RefObject<HTMLElement | null>,
   footerRef: RefObject<HTMLElement | null>,
   scanType: ScanType,
 ) {
   const rootRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!active) return;
+  useLayoutEffect(() => {
+    if (!open) return;
 
     function applyMetrics(topPx: number, bottomPx: number) {
       const root = rootRef.current;
@@ -26,11 +35,29 @@ export function useScannerSafeArea(
       const bottomReserved = bottomPx + FRAME_CLEARANCE_PX;
       const usableWidth = Math.max(0, rootRect.width);
       const usableHeight = Math.max(0, rootRect.height - topPx - bottomReserved);
-      const frame = computeGuideFrameSize(
+      let frame = computeGuideFrameSize(
         usableWidth,
         usableHeight,
         scanTypeConfig[scanType].aspectRatio,
       );
+
+      if (frame.width < MIN_FRAME_WIDTH || frame.height < MIN_FRAME_WIDTH) {
+        const fallback = computeGuideFrameSize(
+          Math.max(usableWidth, 320),
+          Math.max(usableHeight, 480),
+          scanTypeConfig[scanType].aspectRatio,
+          0.85,
+        );
+        frame = {
+          width: Math.max(frame.width, fallback.width, MIN_FRAME_WIDTH),
+          height: Math.max(
+            frame.height,
+            fallback.height,
+            MIN_FRAME_WIDTH / scanTypeConfig[scanType].aspectRatio,
+          ),
+        };
+        scanFlowLog("Guide frame used fallback dimensions", frame);
+      }
 
       root.style.setProperty("--scanner-top-reserved", `${topPx}px`);
       root.style.setProperty("--scanner-bottom-reserved", `${bottomReserved}px`);
@@ -39,16 +66,25 @@ export function useScannerSafeArea(
       root.style.setProperty("--scanner-usable-height", `${usableHeight}px`);
       root.style.setProperty("--scanner-frame-width", `${frame.width}px`);
       root.style.setProperty("--scanner-frame-height", `${frame.height}px`);
+
+      scanFlowLog("Guide frame metrics", {
+        scanType,
+        topPx,
+        bottomPx,
+        usableWidth,
+        usableHeight,
+        frameWidth: frame.width,
+        frameHeight: frame.height,
+      });
     }
 
     function measure() {
-      const topPx = headerRef.current?.getBoundingClientRect().height ?? 0;
-      const bottomPx = footerRef.current?.getBoundingClientRect().height ?? 0;
+      const topPx = headerRef.current?.getBoundingClientRect().height ?? 72;
+      const bottomPx = footerRef.current?.getBoundingClientRect().height ?? 200;
       applyMetrics(topPx, bottomPx);
     }
 
     measure();
-
     const layoutFrame = requestAnimationFrame(measure);
 
     const observer = new ResizeObserver(measure);
@@ -65,7 +101,7 @@ export function useScannerSafeArea(
       window.removeEventListener("resize", measure);
       window.removeEventListener("orientationchange", measure);
     };
-  }, [active, footerRef, headerRef, scanType]);
+  }, [open, footerRef, headerRef, scanType]);
 
   return rootRef;
 }

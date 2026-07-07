@@ -34,6 +34,7 @@ import { salePrice } from "@/lib/card-sales";
 import { analyzeCardImage, type CardDetectionAnalysis } from "@/lib/image-processing/cardDetection";
 import { formatCardImage } from "@/lib/image-processing/cardFormatting";
 import { normalizeCardYear } from "@/lib/card-year";
+import { scanFlowLog } from "@/lib/scanner/scanFlowLog";
 import type { GuidedCaptureResult, ScannerSession, ScanType } from "@/lib/scanner/scannerTypes";
 
 const steps = ["Capture image", "Card details", "Condition", "Collection", "Value", "Review & save"] as const;
@@ -101,7 +102,22 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
     return () => { active = false; };
   }, [initialCollectionId, router]);
 
-  useEffect(() => () => { if (frontPreview) URL.revokeObjectURL(frontPreview); if (backPreview) URL.revokeObjectURL(backPreview); }, [frontPreview, backPreview]);
+  useEffect(() => {
+    if (scanAutostart) {
+      scanFlowLog("Add flow reached /cards/new?scan=1 (AddCardClient)");
+    }
+  }, [scanAutostart]);
+
+  useEffect(() => {
+    if (scannerSession) {
+      scanFlowLog("Scanner session opened from AddCardClient", scannerSession);
+    }
+  }, [scannerSession]);
+
+  useEffect(() => () => {
+    if (frontPreview) URL.revokeObjectURL(frontPreview);
+    if (backPreview) URL.revokeObjectURL(backPreview);
+  }, [frontPreview, backPreview]);
 
   function startScanner(request: { side: "front" | "back"; sequence: ScannerSession["sequence"] }) {
     setScannerSession({

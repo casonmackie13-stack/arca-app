@@ -11,6 +11,10 @@ import {
   mapGuideFrameToVideoCrop,
 } from "@/lib/scanner/cropMapping";
 import { reportCaptureDebug } from "@/lib/scanner/scannerDebug";
+import { scanFlowLog } from "@/lib/scanner/scanFlowLog";
+
+/** Active Add Card capture path — guide-frame crop only. */
+export const ACTIVE_CAPTURE_FUNCTION = "processGuidedCapture";
 
 function drawMappedCrop(
   video: HTMLVideoElement,
@@ -55,16 +59,33 @@ export async function processGuidedCapture(options: {
   const config = scanTypeConfig[scanType];
   const output = config.output;
 
+  scanFlowLog(`Capture called: ${ACTIVE_CAPTURE_FUNCTION}`);
+
   if (!overlayElement) {
+    scanFlowLog("Crop mode: unknown (missing guide frame ref)");
     throw new Error("Guide frame is not ready.");
   }
 
   if (!video.videoWidth || !video.videoHeight) {
+    scanFlowLog("Crop mode: unknown (video dimensions unavailable)");
     throw new Error("Camera is still loading. Try again.");
   }
 
   const guideFrameRect = domRectLike(overlayElement.getBoundingClientRect());
   const videoDisplayRect = domRectLike(video.getBoundingClientRect());
+
+  scanFlowLog("Capture rects", {
+    guideFrameRect,
+    videoDisplayRect,
+    videoWidth: video.videoWidth,
+    videoHeight: video.videoHeight,
+    guideFrameZero: guideFrameRect.width === 0 || guideFrameRect.height === 0,
+  });
+
+  if (guideFrameRect.width === 0 || guideFrameRect.height === 0) {
+    scanFlowLog("Crop mode: unknown (guide frame has zero size)");
+    throw new Error("Guide frame is not ready.");
+  }
 
   const mappedCrop = mapGuideFrameToVideoCrop({
     guideFrameRect,
@@ -74,6 +95,7 @@ export async function processGuidedCapture(options: {
   });
 
   if (!mappedCrop) {
+    scanFlowLog("Crop mode: unknown (crop mapping failed)");
     throw new Error("Camera is still loading. Try again.");
   }
 
@@ -84,12 +106,23 @@ export async function processGuidedCapture(options: {
     video.videoHeight,
   );
 
+  scanFlowLog("Crop mode: guide-frame", {
+    sourceCrop: crop,
+    outputWidth: output.width,
+    outputHeight: output.height,
+  });
+
   reportCaptureDebug(video, overlayElement.getBoundingClientRect(), crop, scanType);
 
   const originalCanvas = drawMappedCrop(video, crop, output);
   const originalSnapshot = await cloneCanvas(originalCanvas);
   const enhancedCanvas = await enhanceListingCanvasAsync(originalSnapshot);
   const quality = assessCaptureQuality(enhancedCanvas);
+
+  scanFlowLog("Capture output dimensions", {
+    original: `${originalCanvas.width}x${originalCanvas.height}`,
+    enhanced: `${enhancedCanvas.width}x${enhancedCanvas.height}`,
+  });
 
   const [originalFile, file] = await Promise.all([
     canvasToJpegFile(originalCanvas, scanType, "original"),

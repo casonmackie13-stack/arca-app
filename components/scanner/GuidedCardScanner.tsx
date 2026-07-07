@@ -1,5 +1,6 @@
 "use client";
 
+/** Active scanner for bottom-nav Add and Add Card step 0 — portaled via ScannerPortal. */
 import { useEffect, useReducer, useRef, type CSSProperties } from "react";
 import GuideFrameOverlay from "@/components/scanner/GuideFrameOverlay";
 import ScanPreview from "@/components/scanner/ScanPreview";
@@ -7,10 +8,11 @@ import ScannerPortal from "@/components/scanner/ScannerPortal";
 import ScannerDebugOverlay from "@/components/scanner/ScannerDebugOverlay";
 import ScanTypeToggle from "@/components/scanner/ScanTypeToggle";
 import { processGuidedCapture } from "@/lib/scanner/captureProcessor";
+import { scanFlowLog } from "@/lib/scanner/scanFlowLog";
 import { acquireCameraStream } from "@/lib/scanner/cameraConstraints";
 import { scannerReducer } from "@/lib/scanner/scannerReducer";
 import { useBodyScrollLock } from "@/lib/scanner/useBodyScrollLock";
-import { useScannerSafeArea } from "@/lib/scanner/useScannerSafeArea";
+import { SCANNER_CSS_DEFAULTS, useScannerSafeArea } from "@/lib/scanner/useScannerSafeArea";
 import {
   initialScannerState,
   isCameraPhase,
@@ -31,6 +33,7 @@ const scannerRootStyle: CSSProperties = {
   zIndex: 200,
   touchAction: "none",
   overscrollBehavior: "none",
+  ...SCANNER_CSS_DEFAULTS,
 };
 
 function stopStream(stream: MediaStream | null) {
@@ -71,10 +74,11 @@ export default function GuidedCardScanner({
   useBodyScrollLock(open);
 
   const cameraActive = open && state.phase !== "PREVIEW" && state.phase !== "ERROR";
-  const safeAreaRootRef = useScannerSafeArea(cameraActive && isCameraPhase(state.phase), headerRef, footerRef, state.scanType);
+  const safeAreaRootRef = useScannerSafeArea(open, headerRef, footerRef, state.scanType);
 
   useEffect(() => {
     if (!open) return;
+    scanFlowLog("Scanner mounted: GuidedCardScanner");
     dispatch({ type: "OPEN" });
   }, [open, activeSide, resetKey]);
 
@@ -126,6 +130,7 @@ export default function GuidedCardScanner({
 
   async function runCapture(mode: CaptureMode) {
     if (!videoRef.current || state.phase === "CAPTURING") return;
+    scanFlowLog("Capture called: runCapture", { mode, scanType: state.scanType, hasGuideRef: Boolean(overlayRef.current) });
     dispatch({ type: "CAPTURE_START", mode });
     try {
       const result = await processGuidedCapture({
@@ -211,11 +216,14 @@ export default function GuidedCardScanner({
 
     {showCamera && <>
       <video
-        ref={videoRef}
+        ref={(node) => {
+          videoRef.current = node;
+          if (node) scanFlowLog("Video mounted");
+        }}
         autoPlay
         playsInline
         muted
-        className="absolute inset-0 h-full w-full object-cover"
+        className="absolute inset-0 z-0 h-full w-full object-cover"
         style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
       />
       <GuideFrameOverlay
