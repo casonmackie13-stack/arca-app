@@ -6,12 +6,14 @@ import ScanPreview from "@/components/scanner/ScanPreview";
 import ScannerPortal from "@/components/scanner/ScannerPortal";
 import ScanTypeToggle from "@/components/scanner/ScanTypeToggle";
 import { processGuidedCapture } from "@/lib/scanner/captureProcessor";
+import { acquireCameraStream } from "@/lib/scanner/cameraConstraints";
 import { scannerReducer } from "@/lib/scanner/scannerReducer";
 import { useBodyScrollLock } from "@/lib/scanner/useBodyScrollLock";
 import { useScannerSafeArea } from "@/lib/scanner/useScannerSafeArea";
 import {
   initialScannerState,
   isCameraPhase,
+  scannerPhaseLabel,
   type CaptureMode,
   type GuidedCaptureResult,
   type ScanSequence,
@@ -84,10 +86,7 @@ export default function GuidedCardScanner({
       streamRef.current = null;
       try {
         if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera is not available on this device.");
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-          audio: false,
-        });
+        const stream = await acquireCameraStream();
         if (!active) { stopStream(stream); return; }
         streamRef.current = stream;
         const video = videoRef.current;
@@ -136,7 +135,7 @@ export default function GuidedCardScanner({
       const previewUrl = URL.createObjectURL(result.file);
       stopStream(streamRef.current);
       streamRef.current = null;
-      dispatch({ type: "CAPTURE_SUCCESS", file: result.file, previewUrl, mode });
+      dispatch({ type: "CAPTURE_SUCCESS", file: result.file, originalFile: result.originalFile, previewUrl, mode });
     } catch (cause) {
       dispatch({
         type: "CAPTURE_FAILED",
@@ -157,8 +156,12 @@ export default function GuidedCardScanner({
   }
 
   function useCapture() {
-    if (!state.capturedFile) return;
-    onUseCapture({ file: state.capturedFile, scanType: state.scanType }, activeSide);
+    if (!state.capturedFile || !state.capturedOriginalFile) return;
+    onUseCapture({
+      file: state.capturedFile,
+      originalFile: state.capturedOriginalFile,
+      scanType: state.scanType,
+    }, activeSide);
   }
 
   if (!open) return null;
@@ -217,22 +220,28 @@ export default function GuidedCardScanner({
       <GuideFrameOverlay
         scanType={state.scanType}
         overlayRef={overlayRef}
-        phase={state.phase}
-        instruction={backInstruction}
       />
 
       <header
         ref={headerRef}
-        className="absolute inset-x-0 top-0 z-20 flex items-center justify-between bg-gradient-to-b from-black/70 to-transparent px-4 pb-4"
+        className="absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/80 to-transparent px-4 pb-3"
         style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)" }}
       >
-        <button type="button" onClick={closeScanner} aria-label="Close scanner" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/50 text-xl font-light backdrop-blur">×</button>
-        <p className="text-sm font-semibold tracking-[-0.01em]">{sideLabel(activeSide)}</p>
-        <div className="h-11 w-11 shrink-0" aria-hidden />
+        <div className="flex items-start justify-between gap-3">
+          <button type="button" onClick={closeScanner} aria-label="Close scanner" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/50 text-xl font-light backdrop-blur">×</button>
+          <div className="min-w-0 flex-1 pt-1 text-center">
+            <p className="text-sm font-semibold tracking-[-0.01em]">{sideLabel(activeSide)}</p>
+            {backInstruction && <p className="mt-1 text-xs text-white/75">{backInstruction}</p>}
+            <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--gold-primary)]">
+              {scannerPhaseLabel(state.phase)}
+            </p>
+          </div>
+          <div className="h-11 w-11 shrink-0" aria-hidden />
+        </div>
       </header>
 
       {state.error && state.phase !== "ERROR" && (
-        <div className="absolute inset-x-4 top-[calc(env(safe-area-inset-top)+4rem)] z-20 rounded-xl border border-[var(--status-warning)] bg-black/85 p-4 text-sm leading-6 shadow-xl backdrop-blur">
+        <div className="absolute inset-x-4 z-20 rounded-xl border border-[var(--status-warning)] bg-black/85 p-3 text-sm leading-6 shadow-xl backdrop-blur" style={{ top: "var(--scanner-top-reserved)" }}>
           <p>{state.error}</p>
         </div>
       )}

@@ -34,6 +34,7 @@ export function scannerReducer(state: ScannerState, event: ScannerEvent): Scanne
         ...state,
         phase: "PREVIEW",
         capturedFile: event.file,
+        capturedOriginalFile: event.originalFile,
         previewUrl: event.previewUrl,
         captureMode: event.mode,
         error: null,
@@ -54,6 +55,7 @@ export function scannerReducer(state: ScannerState, event: ScannerEvent): Scanne
         phase: "INITIALIZING",
         previewUrl: null,
         capturedFile: null,
+        capturedOriginalFile: null,
         captureMode: null,
         error: null,
       };

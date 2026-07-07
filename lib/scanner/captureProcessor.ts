@@ -3,6 +3,8 @@
 import type { ScanType } from "@/lib/scanner/scannerTypes";
 import type { GuidedCaptureResult } from "@/lib/scanner/scannerTypes";
 import { scanTypeConfig } from "@/components/scanner/scanTypes";
+import { assessCaptureQuality } from "@/lib/scanner/previewQuality";
+import { enhanceListingCanvasAsync } from "@/lib/scanner/imageEnhancement";
 
 function captureVideoFrame(video: HTMLVideoElement): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
@@ -45,18 +47,28 @@ function cropGuideFrame(
   canvas.height = output.height;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas is unavailable.");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   ctx.drawImage(video, sx, sy, sw, sh, 0, 0, output.width, output.height);
   return canvas;
 }
 
-async function canvasToJpegFile(canvas: HTMLCanvasElement, scanType: ScanType): Promise<File> {
+async function canvasToJpegFile(canvas: HTMLCanvasElement, scanType: ScanType, suffix = ""): Promise<File> {
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((value) => {
       if (value) resolve(value);
       else reject(new Error("Could not encode capture."));
-    }, "image/jpeg", 0.92);
+    }, "image/jpeg", suffix === "original" ? 0.95 : 0.92);
   });
-  return new File([blob], `arca-${scanType}-${Date.now()}.jpg`, { type: "image/jpeg" });
+  return new File([blob], `arca-${scanType}${suffix ? `-${suffix}` : ""}-${Date.now()}.jpg`, { type: "image/jpeg" });
+}
+
+async function cloneCanvas(canvas: HTMLCanvasElement) {
+  const copy = document.createElement("canvas");
+  copy.width = canvas.width;
+  copy.height = canvas.height;
+  copy.getContext("2d")?.drawImage(canvas, 0, 0);
+  return copy;
 }
 
 export async function processGuidedCapture(options: {
@@ -67,21 +79,38 @@ export async function processGuidedCapture(options: {
   const { video, overlayElement, scanType } = options;
   const output = scanTypeConfig[scanType].output;
 
+  let originalCanvas: HTMLCanvasElement;
+
   if (overlayElement) {
     try {
-      const cropped = cropGuideFrame(video, overlayElement.getBoundingClientRect(), output);
-      const file = await canvasToJpegFile(cropped, scanType);
-      return { file, scanType };
+      originalCanvas = cropGuideFrame(video, overlayElement.getBoundingClientRect(), output);
     } catch {
-      // Fall through to full frame.
+      const frame = captureVideoFrame(video);
+      originalCanvas = document.createElement("canvas");
+      originalCanvas.width = output.width;
+      originalCanvas.height = output.height;
+      const ctx = originalCanvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas is unavailable.");
+      ctx.drawImage(frame, 0, 0, output.width, output.height);
     }
+  } else {
+    const frame = captureVideoFrame(video);
+    originalCanvas = document.createElement("canvas");
+    originalCanvas.width = output.width;
+    originalCanvas.height = output.height;
+    const ctx = originalCanvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas is unavailable.");
+    ctx.drawImage(frame, 0, 0, output.width, output.height);
   }
 
-  const frame = captureVideoFrame(video);
-  const full = document.createElement("canvas");
-  full.width = output.width;
-  full.height = output.height;
-  full.getContext("2d")?.drawImage(frame, 0, 0, output.width, output.height);
-  const file = await canvasToJpegFile(full, scanType);
-  return { file, scanType };
+  const originalSnapshot = await cloneCanvas(originalCanvas);
+  const enhancedCanvas = await enhanceListingCanvasAsync(originalSnapshot);
+  const quality = assessCaptureQuality(enhancedCanvas);
+
+  const [originalFile, file] = await Promise.all([
+    canvasToJpegFile(originalCanvas, scanType, "original"),
+    canvasToJpegFile(enhancedCanvas, scanType),
+  ]);
+
+  return { file, originalFile, scanType, quality };
 }

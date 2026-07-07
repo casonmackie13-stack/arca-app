@@ -20,6 +20,7 @@ export type ScannerState = {
   error: string | null;
   previewUrl: string | null;
   capturedFile: File | null;
+  capturedOriginalFile: File | null;
   captureMode: CaptureMode | null;
 };
 
@@ -30,7 +31,7 @@ export type ScannerEvent =
   | { type: "SET_SCAN_TYPE"; scanType: ScanType }
   | { type: "TOGGLE_AUTO_CAPTURE" }
   | { type: "CAPTURE_START"; mode: CaptureMode }
-  | { type: "CAPTURE_SUCCESS"; file: File; previewUrl: string; mode: CaptureMode }
+  | { type: "CAPTURE_SUCCESS"; file: File; originalFile: File; previewUrl: string; mode: CaptureMode }
   | { type: "CAPTURE_FAILED"; message: string }
   | { type: "PREVIEW_RETAKE" }
   | { type: "CLOSE" };
@@ -43,9 +44,15 @@ export type ScannerSession = {
   resetKey: number;
 };
 
+import type { ScanQualityMetrics } from "@/lib/scanner/scanMetadata";
+
 export type GuidedCaptureResult = {
+  /** Enhanced display image used for preview and Add Card upload. */
   file: File;
+  /** Unmodified guide-frame crop for future AI / archival use. */
+  originalFile: File;
   scanType: ScanType;
+  quality?: ScanQualityMetrics;
 };
 
 export const initialScannerState: ScannerState = {
@@ -55,6 +62,7 @@ export const initialScannerState: ScannerState = {
   error: null,
   previewUrl: null,
   capturedFile: null,
+  capturedOriginalFile: null,
   captureMode: null,
 };
 

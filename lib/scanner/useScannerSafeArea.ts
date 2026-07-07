@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type RefObject } from "react";
 
-const FRAME_CLEARANCE_PX = 20;
+const FRAME_CLEARANCE_PX = 16;
 
 export function useScannerSafeArea(
   active: boolean,
