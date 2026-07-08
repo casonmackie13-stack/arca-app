@@ -1,6 +1,20 @@
 "use client";
 
-import type { ScanQualityMetrics } from "@/lib/scanner/scanMetadata";
+import type { Point, ScanQualityMetrics } from "@/lib/scanner/scanMetadata";
+import {
+  PERSPECTIVE_CONFIDENCE_THRESHOLD,
+  perspectiveCorrect,
+} from "@/lib/scanner/cardVision";
+import { scaleCanvasTo } from "@/lib/scanner/burstCapture";
+
+export type CropMethod = "opencv_corners" | "guide_fallback";
+
+export type FinalizeCaptureResult = {
+  canvas: HTMLCanvasElement;
+  cropMethod: CropMethod;
+  reason?: string;
+  perspectiveCorrected: boolean;
+};
 
 function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
@@ -116,4 +130,73 @@ export async function applyDeterministicEnhanceAsync(
     else setTimeout(resolve, 0);
   });
   return applyDeterministicEnhance(source, quality);
+}
+
+/**
+ * Perspective-correct when corners are valid; otherwise scale guide crop with explicit fallback labeling.
+ */
+export async function finalizeCaptureCanvas(options: {
+  sourceCanvas: HTMLCanvasElement;
+  corners?: Point[];
+  confidence: number;
+  outputWidth: number;
+  outputHeight: number;
+  confidenceThreshold?: number;
+}): Promise<FinalizeCaptureResult> {
+  const {
+    sourceCanvas,
+    corners,
+    confidence,
+    outputWidth,
+    outputHeight,
+    confidenceThreshold = PERSPECTIVE_CONFIDENCE_THRESHOLD,
+  } = options;
+
+  const hasValidCorners = Boolean(corners?.length === 4 && confidence >= confidenceThreshold);
+
+  if (hasValidCorners && corners) {
+    const inset = 0.012;
+    const insetCorners: Point[] = corners.map((point) => ({
+      x: point.x * (1 - inset * 2) + sourceCanvas.width * inset,
+      y: point.y * (1 - inset * 2) + sourceCanvas.height * inset,
+    }));
+
+    try {
+      const corrected = await perspectiveCorrect(
+        sourceCanvas,
+        insetCorners,
+        outputWidth,
+        outputHeight,
+      );
+      return {
+        canvas: corrected,
+        cropMethod: "opencv_corners",
+        perspectiveCorrected: true,
+      };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "perspective_correction_failed";
+      console.warn("[ARCA Scanner] Perspective correction failed, using guide fallback:", reason);
+      return {
+        canvas: scaleCanvasTo(sourceCanvas, outputWidth, outputHeight),
+        cropMethod: "guide_fallback",
+        reason,
+        perspectiveCorrected: false,
+      };
+    }
+  }
+
+  const reason = !corners?.length
+    ? "no_valid_corners"
+    : confidence < confidenceThreshold
+      ? `low_edge_confidence_${confidence.toFixed(2)}`
+      : "unknown";
+
+  console.warn("[ARCA Scanner] Guide-frame fallback crop used:", reason);
+
+  return {
+    canvas: scaleCanvasTo(sourceCanvas, outputWidth, outputHeight),
+    cropMethod: "guide_fallback",
+    reason,
+    perspectiveCorrected: false,
+  };
 }

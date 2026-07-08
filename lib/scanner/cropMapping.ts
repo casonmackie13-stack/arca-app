@@ -1,3 +1,5 @@
+import { mapDisplayRectToVideoCrop } from "@/lib/scanner/videoCoordinates";
+
 export type VideoCropRect = {
   sx: number;
   sy: number;
@@ -46,26 +48,22 @@ export function mapGuideFrameToVideoCrop(options: {
     return null;
   }
 
-  const displayedScale = Math.max(
-    videoDisplayRect.width / videoWidth,
-    videoDisplayRect.height / videoHeight,
-  );
-
-  const renderedVideoWidth = videoWidth * displayedScale;
-  const renderedVideoHeight = videoHeight * displayedScale;
-  const cropXInDisplayedVideo = (renderedVideoWidth - videoDisplayRect.width) / 2;
-  const cropYInDisplayedVideo = (renderedVideoHeight - videoDisplayRect.height) / 2;
-
   const localX = guideFrameRect.left - videoDisplayRect.left;
   const localY = guideFrameRect.top - videoDisplayRect.top;
 
-  const sourceX = (localX + cropXInDisplayedVideo) / displayedScale;
-  const sourceY = (localY + cropYInDisplayedVideo) / displayedScale;
-  const sourceW = guideFrameRect.width / displayedScale;
-  const sourceH = guideFrameRect.height / displayedScale;
-
   return clampCrop(
-    { sx: sourceX, sy: sourceY, sw: sourceW, sh: sourceH },
+    mapDisplayRectToVideoCrop(
+      localX,
+      localY,
+      guideFrameRect.width,
+      guideFrameRect.height,
+      {
+        videoWidth,
+        videoHeight,
+        displayWidth: videoDisplayRect.width,
+        displayHeight: videoDisplayRect.height,
+      },
+    ),
     videoWidth,
     videoHeight,
   );

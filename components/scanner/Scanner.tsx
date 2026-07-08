@@ -15,12 +15,14 @@ import {
   judgeImageQuality,
   shouldRequestAiQuality,
 } from "@/lib/scanner/imageQualityJudge";
+import { opencvStatusLabel } from "@/lib/scanner/opencvLoader";
 import { resolveScannerMessage } from "@/lib/scanner/scannerMessages";
 import { scanFlowLog } from "@/lib/scanner/scanFlowLog";
 import { scannerReducer } from "@/lib/scanner/scannerReducer";
 import { scanProgressStep, scannerStatusDisplay } from "@/lib/scanner/scannerStatus";
 import { useBodyScrollLock } from "@/lib/scanner/useBodyScrollLock";
 import { useLiveDetection } from "@/lib/scanner/useLiveDetection";
+import { useOpenCvLoader } from "@/lib/scanner/useOpenCvLoader";
 import { SCANNER_CSS_DEFAULTS, useScannerLayout } from "@/lib/scanner/useScannerLayout";
 import {
   initialScannerState,
@@ -90,12 +92,14 @@ export default function Scanner({
       : "camera";
 
   const cameraActive = open && mode === "camera";
+  const opencv = useOpenCvLoader(open);
   const detectionActive = cameraActive && state.phase !== "CAPTURING" && state.phase !== "INITIALIZING";
 
-  const { detection, stableMs, readyForAutoCapture } = useLiveDetection(
+  const { detection, stableMs, readyForAutoCapture, autoCaptureBlockReason } = useLiveDetection(
     videoRef,
     state.scanType,
     detectionActive,
+    opencv.status,
   );
 
   const layoutRootRef = useScannerLayout(open, videoRef, state.scanType, detection);
@@ -308,6 +312,10 @@ export default function Scanner({
             scanType={state.scanType}
             activeSide={activeSide}
             active={showCamera}
+            opencv={opencv}
+            detection={detection}
+            autoCaptureBlockReason={autoCaptureBlockReason}
+            captureMetadata={state.captureMetadata}
             lastCaptureCrop={lastCaptureCrop}
             lastOutputSize={lastOutputSize}
           />
@@ -315,6 +323,9 @@ export default function Scanner({
             activeSide={activeSide}
             scanType={state.scanType}
             statusText={statusText}
+            opencvStatusText={opencvStatusLabel(opencv.status)}
+            opencvStatus={opencv.status}
+            opencvLoadMs={opencv.loadMs}
             progressStep={progressStep}
             autoCaptureEnabled={state.autoCaptureEnabled}
             autoCaptureProgress={autoCaptureProgress}

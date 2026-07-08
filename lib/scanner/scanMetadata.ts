@@ -42,7 +42,15 @@ export type ScanMetadata = {
   edgeDetected: boolean;
   perspectiveCorrected: boolean;
   fallbackCrop?: boolean;
+  crop_method?: "opencv_corners" | "guide_fallback";
+  crop_fallback_reason?: string;
+  opencv_status?: "loading" | "ready" | "failed";
   edgeConfidence?: number;
+  corners?: Point[];
+  selected_burst_index?: number;
+  guide_rect_native?: { sx: number; sy: number; sw: number; sh: number };
+  videoWidth?: number;
+  videoHeight?: number;
   quality?: ScanQualityMetrics;
   /** Prepared for future live recognition; v1 uses post-capture preview only */
   recognition?: ScanRecognitionPreview;

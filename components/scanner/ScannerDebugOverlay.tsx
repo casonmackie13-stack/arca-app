@@ -6,6 +6,8 @@ import { scanTypeConfig } from "@/components/scanner/scanTypes";
 import { ACTIVE_CAPTURE_FUNCTION } from "@/lib/scanner/captureProcessor";
 import { domRectLike, mapGuideFrameToVideoCrop } from "@/lib/scanner/cropMapping";
 import { isScannerDebugEnabled } from "@/lib/scanner/scannerDebug";
+import type { OpenCvLoadState } from "@/lib/scanner/opencvLoader";
+import type { CardEdgeDetection, ScanMetadata } from "@/lib/scanner/scanMetadata";
 import type { ScanType } from "@/lib/scanner/scannerTypes";
 
 export default function ScannerDebugOverlay({
@@ -14,6 +16,10 @@ export default function ScannerDebugOverlay({
   scanType,
   activeSide,
   active,
+  opencv = { status: "loading", error: null, loadMs: null },
+  detection = null,
+  autoCaptureBlockReason = null,
+  captureMetadata = null,
   lastCaptureCrop,
   lastOutputSize,
 }: {
@@ -22,6 +28,10 @@ export default function ScannerDebugOverlay({
   scanType: ScanType;
   activeSide: "front" | "back";
   active: boolean;
+  opencv?: OpenCvLoadState;
+  detection?: CardEdgeDetection | null;
+  autoCaptureBlockReason?: string | null;
+  captureMetadata?: ScanMetadata | null;
   lastCaptureCrop?: string | null;
   lastOutputSize?: string | null;
 }) {
@@ -54,6 +64,14 @@ export default function ScannerDebugOverlay({
         `side=${activeSide}`,
         `captureFn=${ACTIVE_CAPTURE_FUNCTION}`,
         `scan=${scanType}`,
+        `opencv=${opencv.status}${opencv.loadMs != null ? ` (${opencv.loadMs}ms)` : ""}`,
+        opencv.error ? `opencvError=${opencv.error}` : "opencvError=none",
+        `found=${detection?.found ? "yes" : "no"}`,
+        `confidence=${detection?.confidence?.toFixed(3) ?? "0"}`,
+        detection?.corners?.length ? `corners=${detection.corners.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(" ")}` : "corners=none",
+        `autoBlock=${autoCaptureBlockReason ?? "none"}`,
+        captureMetadata?.crop_method ? `lastCropMethod=${captureMetadata.crop_method}` : "lastCropMethod=none",
+        captureMetadata?.crop_fallback_reason ? `lastFallback=${captureMetadata.crop_fallback_reason}` : "lastFallback=none",
         `frame=${Math.round(guideRect.width)}x${Math.round(guideRect.height)}`,
         `frameLeft=${Math.round(guideRect.left)}`,
         `frameTop=${Math.round(guideRect.top)}`,
@@ -76,7 +94,19 @@ export default function ScannerDebugOverlay({
       window.clearInterval(timer);
       window.removeEventListener("resize", update);
     };
-  }, [active, activeSide, guideFrameRef, lastCaptureCrop, lastOutputSize, scanType, videoRef]);
+  }, [
+    active,
+    activeSide,
+    autoCaptureBlockReason,
+    captureMetadata,
+    detection,
+    guideFrameRef,
+    lastCaptureCrop,
+    lastOutputSize,
+    opencv,
+    scanType,
+    videoRef,
+  ]);
 
   if (!active || !isScannerDebugEnabled() || !snapshot) return null;
 

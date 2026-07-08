@@ -1,13 +1,15 @@
 import type { ScanType } from "@/lib/scanner/scannerTypes";
 import { scanTypeConfig } from "@/components/scanner/scanTypes";
 import type { VideoCropRect } from "@/lib/scanner/cropMapping";
+import type { ScanMetadata } from "@/lib/scanner/scanMetadata";
 
 const DEBUG_KEY = "arcaScannerDebug";
 
 export function isScannerDebugEnabled() {
   if (typeof window === "undefined") return false;
   try {
-    return window.localStorage.getItem(DEBUG_KEY) === "1";
+    const value = window.localStorage.getItem(DEBUG_KEY);
+    return value === "1" || value === "true";
   } catch {
     return false;
   }
@@ -33,6 +35,23 @@ export function logScannerDebug(snapshot: ScannerDebugSnapshot) {
   if (!isScannerDebugEnabled()) return;
   console.group("[ARCA Scanner Debug]");
   console.table(snapshot);
+  console.groupEnd();
+}
+
+export function logCaptureMetadata(metadata: ScanMetadata) {
+  if (!isScannerDebugEnabled()) return;
+  console.group("[ARCA Scanner Debug] capture metadata");
+  console.info({
+    opencv_status: metadata.opencv_status,
+    crop_method: metadata.crop_method,
+    crop_fallback_reason: metadata.crop_fallback_reason,
+    edge_confidence: metadata.edgeConfidence,
+    corners: metadata.corners,
+    selected_burst_index: metadata.selected_burst_index,
+    guide_rect_native: metadata.guide_rect_native,
+    videoWidth: metadata.videoWidth,
+    videoHeight: metadata.videoHeight,
+  });
   console.groupEnd();
 }
 

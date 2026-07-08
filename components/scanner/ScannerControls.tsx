@@ -3,6 +3,7 @@
 import type { RefObject } from "react";
 import ScanTypeToggle from "@/components/scanner/ScanTypeToggle";
 import type { ScanProgressStep } from "@/lib/scanner/scannerStatus";
+import type { OpenCvStatus } from "@/lib/scanner/opencvLoader";
 import type { ScanType } from "@/lib/scanner/scannerTypes";
 
 const PROGRESS_STEPS: { id: ScanProgressStep; label: string }[] = [
@@ -20,6 +21,9 @@ export default function ScannerControls({
   activeSide,
   scanType,
   statusText,
+  opencvStatusText,
+  opencvStatus,
+  opencvLoadMs,
   progressStep,
   autoCaptureEnabled,
   autoCaptureProgress,
@@ -40,6 +44,9 @@ export default function ScannerControls({
   activeSide: "front" | "back";
   scanType: ScanType;
   statusText: string;
+  opencvStatusText: string;
+  opencvStatus: OpenCvStatus;
+  opencvLoadMs: number | null;
   progressStep: ScanProgressStep;
   autoCaptureEnabled: boolean;
   autoCaptureProgress: number;
@@ -108,9 +115,23 @@ export default function ScannerControls({
             })}
           </div>
 
-          <div className="pointer-events-none mt-3 flex justify-center px-4">
+          <div className="pointer-events-none mt-3 flex flex-col items-center gap-2 px-4">
             <div className="scanner-status-pill inline-flex min-h-8 max-w-[min(92vw,22rem)] items-center justify-center rounded-full border border-white/12 bg-black/48 px-4 py-1.5">
               <p className="text-[12px] font-medium tracking-[-0.01em] text-white/92">{statusText}</p>
+            </div>
+            <div
+              className={`inline-flex min-h-7 max-w-[min(92vw,24rem)] items-center justify-center rounded-full border px-3 py-1 text-[11px] font-medium tracking-[-0.01em] ${
+                opencvStatus === "ready"
+                  ? "border-[var(--gold-primary)]/35 bg-[var(--gold-primary)]/10 text-[var(--gold-primary)]"
+                  : opencvStatus === "failed"
+                    ? "border-[var(--status-warning)]/50 bg-[var(--status-warning)]/10 text-[var(--status-warning)]"
+                    : "border-white/12 bg-black/40 text-white/72"
+              }`}
+            >
+              {opencvStatusText}
+              {opencvStatus === "ready" && opencvLoadMs != null ? (
+                <span className="ml-1.5 text-white/45">({opencvLoadMs}ms)</span>
+              ) : null}
             </div>
           </div>
         </div>

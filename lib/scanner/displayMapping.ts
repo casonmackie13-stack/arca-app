@@ -1,26 +1,18 @@
 import type { ScanPoint } from "@/lib/scanner/scanMetadata";
+import {
+  mapCornersToDisplayPercent,
+  mapVideoPointToDisplayPercent,
+  type VideoDisplayMetrics,
+} from "@/lib/scanner/videoCoordinates";
 
-export type VideoDisplayMetrics = {
-  videoWidth: number;
-  videoHeight: number;
-  displayWidth: number;
-  displayHeight: number;
-};
+export type { VideoDisplayMetrics };
 
+/** @deprecated Use mapVideoPointToDisplayPercent from videoCoordinates.ts */
 export function mapVideoPointToDisplay(point: ScanPoint, metrics: VideoDisplayMetrics) {
-  const scale = Math.max(metrics.displayWidth / metrics.videoWidth, metrics.displayHeight / metrics.videoHeight);
-  const renderedWidth = metrics.videoWidth * scale;
-  const renderedHeight = metrics.videoHeight * scale;
-  const offsetX = (metrics.displayWidth - renderedWidth) / 2;
-  const offsetY = (metrics.displayHeight - renderedHeight) / 2;
-  const displayX = offsetX + point.x * scale;
-  const displayY = offsetY + point.y * scale;
-  return {
-    x: (displayX / metrics.displayWidth) * 100,
-    y: (displayY / metrics.displayHeight) * 100,
-  };
+  return mapVideoPointToDisplayPercent(point, metrics);
 }
 
+/** @deprecated Use mapCornersToDisplayPercent from videoCoordinates.ts */
 export function mapCornersToDisplay(corners: ScanPoint[], metrics: VideoDisplayMetrics) {
-  return corners.map((point) => mapVideoPointToDisplay(point, metrics));
+  return mapCornersToDisplayPercent(corners, metrics);
 }

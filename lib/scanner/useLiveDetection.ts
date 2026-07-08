@@ -2,7 +2,12 @@
 
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { ScanType } from "@/components/scanner/scanTypes";
-import { detectCardEdges, isReadyForAutoCapture } from "@/lib/scanner/cardVision";
+import {
+  detectCardEdges,
+  getAutoCaptureBlockReason,
+  isReadyForAutoCapture,
+} from "@/lib/scanner/cardVision";
+import type { OpenCvStatus } from "@/lib/scanner/opencvLoader";
 import type { CardEdgeDetection, ScanPoint } from "@/lib/scanner/scanMetadata";
 
 const TARGET_FPS = 10;
@@ -12,6 +17,7 @@ export function useLiveDetection(
   videoRef: RefObject<HTMLVideoElement | null>,
   scanType: ScanType,
   active: boolean,
+  opencvStatus: OpenCvStatus,
 ) {
   const [detection, setDetection] = useState<CardEdgeDetection | null>(null);
   const [stableMs, setStableMs] = useState(0);
@@ -21,10 +27,15 @@ export function useLiveDetection(
   const lastTickRef = useRef(0);
   const runningRef = useRef(false);
 
+  const opencvReady = opencvStatus === "ready";
+
   useEffect(() => {
-    if (!active) {
+    if (!active || !opencvReady) {
       stableSinceRef.current = null;
       previousCornersRef.current = undefined;
+      if (!opencvReady) {
+        setStableMs(0);
+      }
       return;
     }
 
@@ -77,11 +88,16 @@ export function useLiveDetection(
       stableSinceRef.current = null;
       previousCornersRef.current = undefined;
     };
-  }, [active, scanType, videoRef]);
+  }, [active, opencvReady, scanType, videoRef]);
+
+  const autoCaptureBlockReason = getAutoCaptureBlockReason(detection, stableMs, { opencvReady });
 
   return {
     detection,
     stableMs,
-    readyForAutoCapture: detection ? isReadyForAutoCapture(detection, stableMs) : false,
+    autoCaptureBlockReason,
+    readyForAutoCapture: detection
+      ? isReadyForAutoCapture(detection, stableMs, { opencvReady })
+      : false,
   };
 }

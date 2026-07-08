@@ -3,9 +3,12 @@
 import type { ScanType } from "@/lib/scanner/scannerTypes";
 import type { GuidedCaptureResult } from "@/lib/scanner/scannerTypes";
 import { scanTypeConfig } from "@/components/scanner/scanTypes";
-import { captureBurstFrames, scaleCanvasTo } from "@/lib/scanner/burstCapture";
-import { detectCardEdges, perspectiveCorrect } from "@/lib/scanner/cardVision";
-import { applyDeterministicEnhanceAsync } from "@/lib/scanner/deterministicEnhance";
+import { captureBurstFrames } from "@/lib/scanner/burstCapture";
+import { detectCardEdges } from "@/lib/scanner/cardVision";
+import {
+  applyDeterministicEnhanceAsync,
+  finalizeCaptureCanvas,
+} from "@/lib/scanner/deterministicEnhance";
 import {
   computeBlurScore,
   qualityBadgeFromMetrics,
@@ -16,10 +19,10 @@ import {
   enforceAspectRatioCrop,
   mapGuideFrameToVideoCrop,
 } from "@/lib/scanner/cropMapping";
-import { reportCaptureDebug } from "@/lib/scanner/scannerDebug";
+import { getOpenCvLoadState } from "@/lib/scanner/opencvLoader";
+import { isScannerDebugEnabled, logCaptureMetadata, reportCaptureDebug } from "@/lib/scanner/scannerDebug";
 import { scanFlowLog } from "@/lib/scanner/scanFlowLog";
 import type { ScanMetadata } from "@/lib/scanner/scanMetadata";
-import type { Point } from "@/lib/scanner/scanMetadata";
 
 /** Active Add Card capture path — burst select, perspective crop, deterministic enhance. */
 export const ACTIVE_CAPTURE_FUNCTION = "processGuidedCapture";
@@ -52,6 +55,7 @@ export async function processGuidedCapture(options: {
   const { video, overlayElement, scanType, captureMode = "manual", onCropComputed } = options;
   const config = scanTypeConfig[scanType];
   const output = config.output;
+  const opencvState = getOpenCvLoadState();
 
   scanFlowLog("Capture called");
 
@@ -68,6 +72,7 @@ export async function processGuidedCapture(options: {
     videoHeight: video.videoHeight,
     displayWidth: Math.round(video.getBoundingClientRect().width),
     displayHeight: Math.round(video.getBoundingClientRect().height),
+    opencv_status: opencvState.status,
   });
 
   const guideFrameRect = domRectLike(overlayElement.getBoundingClientRect());
@@ -104,8 +109,10 @@ export async function processGuidedCapture(options: {
   let bestScore = -Infinity;
   let bestDetection = null as Awaited<ReturnType<typeof detectCardEdges>> | null;
   let bestQuality = scoreCaptureFrame(bestCanvas, null, 0).quality;
+  let selectedBurstIndex = 0;
 
-  for (const frame of burstFrames) {
+  for (let index = 0; index < burstFrames.length; index += 1) {
+    const frame = burstFrames[index];
     const blurScore = await computeBlurScore(frame);
     const detection = await detectCardEdges(frame, scanType, undefined, { force: true });
     const scored = scoreCaptureFrame(frame, detection, blurScore);
@@ -114,35 +121,29 @@ export async function processGuidedCapture(options: {
       bestCanvas = frame;
       bestDetection = detection;
       bestQuality = scored.quality;
+      selectedBurstIndex = index;
     }
   }
 
   scanFlowLog("Burst capture selected frame", {
     frameCount: burstFrames.length,
+    selected_burst_index: selectedBurstIndex,
     score: bestScore,
     edgeConfidence: bestDetection?.confidence ?? 0,
+    found: bestDetection?.found ?? false,
   });
 
-  let processedCanvas = bestCanvas;
-  let perspectiveCorrected = false;
-  let edgeDetected = Boolean(bestDetection?.found && bestDetection.corners?.length === 4);
+  const finalized = await finalizeCaptureCanvas({
+    sourceCanvas: bestCanvas,
+    corners: bestDetection?.corners,
+    confidence: bestDetection?.confidence ?? 0,
+    outputWidth: output.width,
+    outputHeight: output.height,
+  });
 
-  if (edgeDetected && bestDetection?.corners?.length === 4 && bestDetection.confidence >= 0.45) {
-    const inset = 0.012;
-    const insetCorners: Point[] = bestDetection.corners.map((point) => ({
-      x: point.x * (1 - inset * 2) + bestCanvas.width * inset,
-      y: point.y * (1 - inset * 2) + bestCanvas.height * inset,
-    }));
-    processedCanvas = await perspectiveCorrect(
-      bestCanvas,
-      insetCorners,
-      output.width,
-      output.height,
-    );
-    perspectiveCorrected = true;
-  } else {
-    processedCanvas = scaleCanvasTo(bestCanvas, output.width, output.height);
-  }
+  const processedCanvas = finalized.canvas;
+  const edgeDetected = Boolean(bestDetection?.found && bestDetection.corners?.length === 4);
+  const perspectiveCorrected = finalized.perspectiveCorrected;
 
   const originalSnapshot = await cloneCanvas(processedCanvas);
   const enhancedCanvas = await applyDeterministicEnhanceAsync(processedCanvas, bestQuality);
@@ -153,8 +154,16 @@ export async function processGuidedCapture(options: {
     captureMode,
     edgeDetected,
     perspectiveCorrected,
-    fallbackCrop: !perspectiveCorrected,
+    fallbackCrop: finalized.cropMethod === "guide_fallback",
+    crop_method: finalized.cropMethod,
+    crop_fallback_reason: finalized.reason,
+    opencv_status: opencvState.status,
     edgeConfidence: bestDetection?.confidence,
+    corners: bestDetection?.corners,
+    selected_burst_index: selectedBurstIndex,
+    guide_rect_native: crop,
+    videoWidth: video.videoWidth,
+    videoHeight: video.videoHeight,
     quality: bestQuality,
   };
 
@@ -170,7 +179,13 @@ export async function processGuidedCapture(options: {
     original: `${originalSnapshot.width}x${originalSnapshot.height}`,
     enhanced: `${enhancedCanvas.width}x${enhancedCanvas.height}`,
     qualityBadge,
+    crop_method: finalized.cropMethod,
+    crop_fallback_reason: finalized.reason,
   });
+
+  if (isScannerDebugEnabled()) {
+    logCaptureMetadata(metadata);
+  }
 
   const [originalFile, file] = await Promise.all([
     canvasToJpegFile(originalSnapshot, scanType, "original"),

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type RefObject } from "react";
-import { mapCornersToDisplay } from "@/lib/scanner/displayMapping";
+import { mapCornersToDisplayPercent } from "@/lib/scanner/videoCoordinates";
 import type { CardEdgeDetection } from "@/lib/scanner/scanMetadata";
 
 type OverlayState = {
@@ -49,7 +49,7 @@ export default function DetectionOverlay({
         return;
       }
 
-      const displayCorners = mapCornersToDisplay(detection.corners, {
+      const displayCorners = mapCornersToDisplayPercent(detection.corners, {
         videoWidth: video.videoWidth,
         videoHeight: video.videoHeight,
         displayWidth: videoRect.width,
