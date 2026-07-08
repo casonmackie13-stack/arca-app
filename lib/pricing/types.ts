@@ -18,6 +18,7 @@ export type PricingCardInput = {
   grading_company: string;
   grade: string;
   is_graded: boolean;
+  condition: string;
 };
 
 export type PricingSale = {
@@ -40,6 +41,7 @@ export type PricingBasis =
   | "recent_raw_sales"
   | "exact_grade_sales"
   | "similar_comps"
+  | "ai_metadata_estimate"
   | "insufficient_data";
 
 export type RecentSalesBundle = {
@@ -115,6 +117,7 @@ export function normalizePricingCard(raw: unknown): PricingCardInput | null {
     grading_company: is_graded ? grading_company : "",
     grade: is_graded ? grade : "",
     is_graded,
+    condition: toStringField(value.condition).trim(),
   };
 }
 

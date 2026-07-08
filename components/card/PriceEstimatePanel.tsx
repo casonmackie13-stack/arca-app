@@ -16,7 +16,8 @@ const basisLabel: Record<PriceEstimateResponse["pricing_basis"], string> = {
   recent_raw_sales: "Based on recent raw sales",
   exact_grade_sales: "Based on exact-grade sales",
   similar_comps: "Comp-based estimate (not exact sales)",
-  insufficient_data: "Insufficient sales data",
+  ai_metadata_estimate: "AI-estimated from card metadata",
+  insufficient_data: "Insufficient data",
 };
 
 function formatMoney(value: number | null): string {
@@ -78,6 +79,16 @@ export default function PriceEstimatePanel({
   const hasRange = Boolean(
     data && (data.estimated_value_low != null || data.estimated_value_mid != null || data.estimated_value_high != null),
   );
+  const aiOnly = data?.pricing_basis === "ai_metadata_estimate";
+  const hasLiveSales = Boolean(
+    data && (
+      data.recent_sales.raw.length +
+      data.recent_sales.psa_9.length +
+      data.recent_sales.psa_10.length +
+      data.recent_sales.exact_grade.length +
+      data.recent_sales.similar_comps.length
+    ) > 0,
+  );
 
   return (
     <Panel className="p-5">
@@ -92,7 +103,7 @@ export default function PriceEstimatePanel({
       </div>
 
       {loading && (
-        <p className="mt-4 text-sm text-[var(--text-secondary)]">Finding recent sales…</p>
+        <p className="mt-4 text-sm text-[var(--text-secondary)]">Generating AI price estimate…</p>
       )}
 
       {!loading && error && (
@@ -101,7 +112,7 @@ export default function PriceEstimatePanel({
 
       {!loading && !error && !data && (
         <p className="mt-4 text-sm leading-6 text-[var(--text-tertiary)]">
-          Run an estimate to check recent sales and generate a transparent value range. This runs automatically after autofill.
+          Run an estimate to generate an AI value range from card metadata. This runs automatically after autofill.
         </p>
       )}
 
@@ -111,6 +122,12 @@ export default function PriceEstimatePanel({
             <Badge tone={confidenceTone[data.confidence]}>{data.confidence} confidence</Badge>
             <span className="text-xs text-[var(--text-tertiary)]">{basisLabel[data.pricing_basis]}</span>
           </div>
+
+          {aiOnly && (
+            <p className="rounded-lg border border-[var(--status-warning)]/40 bg-[var(--status-warning-bg)] px-4 py-3 text-sm leading-6 text-[var(--status-warning)]">
+              No live recent sales provider connected yet. This estimate is based on AI market reasoning from card metadata and similar general comps.
+            </p>
+          )}
 
           {hasRange ? (
             <>
@@ -140,20 +157,30 @@ export default function PriceEstimatePanel({
             </p>
           )}
 
-          {data.notes && hasRange && (
+          {data.notes && hasRange && !aiOnly && (
+            <p className="text-sm leading-6 text-[var(--text-secondary)]">{data.notes}</p>
+          )}
+          {data.notes && hasRange && aiOnly && (
             <p className="text-sm leading-6 text-[var(--text-secondary)]">{data.notes}</p>
           )}
 
-          {/* Recent sales used — raw-first for raw cards, exact grade for graded. */}
           <div className="space-y-4">
-            {isGraded ? (
-              <SalesList title="Recent exact-grade sales" sales={data.recent_sales.exact_grade} />
+            {hasLiveSales ? (
+              isGraded ? (
+                <SalesList title="Recent exact-grade sales" sales={data.recent_sales.exact_grade} />
+              ) : (
+                <>
+                  <SalesList title="Recent raw sales" sales={data.recent_sales.raw} />
+                  <SalesList title="Recent PSA 9 sales (context only)" sales={data.recent_sales.psa_9} muted />
+                  <SalesList title="Recent PSA 10 sales (context only)" sales={data.recent_sales.psa_10} muted />
+                </>
+              )
             ) : (
-              <>
-                <SalesList title="Recent raw sales" sales={data.recent_sales.raw} />
-                <SalesList title="Recent PSA 9 sales (context only)" sales={data.recent_sales.psa_9} muted />
-                <SalesList title="Recent PSA 10 sales (context only)" sales={data.recent_sales.psa_10} muted />
-              </>
+              <p className="text-sm leading-6 text-[var(--text-tertiary)]">
+                {isGraded
+                  ? "Exact-grade recent sales require a live sales provider."
+                  : "PSA 9/10 recent sales require a live sales provider."}
+              </p>
             )}
             <SalesList title="Similar comparable sales" sales={data.recent_sales.similar_comps} muted />
           </div>

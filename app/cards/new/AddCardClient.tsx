@@ -19,6 +19,7 @@ import { archiveOriginalImage, autofillCardInfo, estimateCardPrice, fetchRecentS
 import type { PriceEstimateResponse, PricingCardInput } from "@/lib/pricing/types";
 import {
   cardMutation,
+  buildCardInsertPayload,
   emptyCardForm,
   validateCardForm,
   validateCardGrading,
@@ -62,6 +63,7 @@ function aiToPricingCard(ai: AutofillCard): PricingCardInput {
     grading_company: graded ? ai.grade_company.trim() : "",
     grade: graded ? ai.grade.trim() : "",
     is_graded: graded,
+    condition: ai.condition.trim(),
   };
 }
 
@@ -80,6 +82,7 @@ function formToPricingCard(form: CardFormValue): PricingCardInput {
     grading_company: graded ? form.grader.trim() : "",
     grade: graded ? form.grade.trim() : "",
     is_graded: graded,
+    condition: form.condition.trim(),
   };
 }
 
@@ -391,6 +394,30 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
     if (path) await supabase.storage.from("card_images").remove([path]);
   }
 
+  async function saveOptionalCardMetadata(
+    cardId: string,
+    ownerId: string,
+    fields: Record<string, unknown>,
+    label: string,
+  ) {
+    try {
+      const { error } = await supabase.from("cards").update(fields).eq("id", cardId).eq("owner_id", ownerId);
+      if (error) console.warn(`[ARCA Save] Optional ${label} metadata not saved:`, error.message, error);
+    } catch (cause) {
+      console.warn(`[ARCA Save] Optional ${label} metadata failed:`, cause);
+    }
+  }
+
+  function formatSaveError(cause: unknown, context: string): string {
+    if (cause && typeof cause === "object" && "message" in cause && typeof (cause as { message: unknown }).message === "string") {
+      const message = (cause as { message: string }).message;
+      console.error(`[ARCA Save] ${context}:`, cause);
+      return `${context}: ${message}`;
+    }
+    console.error(`[ARCA Save] ${context}:`, cause);
+    return context;
+  }
+
   async function addCard() {
     const frontToUpload = frontFile;
     const backToUpload = backFile;
@@ -418,27 +445,41 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
       const userId = userData.user.id;
 
       let collectionId = selectedCollectionId;
-      const { data: ownedCollection, error: ownershipError } = await supabase.from("collections").select("id").eq("id", collectionId).eq("owner_id", userData.user.id).maybeSingle();
-      if (ownershipError) throw ownershipError;
+      if (!collectionId) {
+        collectionId = await ensureUnsortedCollection(userData.user.id);
+      }
+      const { data: ownedCollection, error: ownershipError } = await supabase
+        .from("collections")
+        .select("id")
+        .eq("id", collectionId)
+        .eq("owner_id", userData.user.id)
+        .maybeSingle();
+      if (ownershipError) throw new Error(formatSaveError(ownershipError, "Could not verify collection ownership"));
       if (!ownedCollection) collectionId = await ensureUnsortedCollection(userData.user.id);
 
       async function uploadCardSide(file: File, side: "front" | "back") {
         const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
         const path = `${userId}/cards/${Date.now()}-${side}-${createMobileSafeId()}.${ext}`;
         const { error } = await supabase.storage.from("card_images").upload(path, file, { contentType: file.type, upsert: false });
-        if (error) throw error;
+        if (error) throw new Error(formatSaveError(error, `Could not upload ${side} image`));
         uploadedPaths.push(path);
         return supabase.storage.from("card_images").getPublicUrl(path).data.publicUrl;
       }
 
-      const frontImageUrl = await uploadCardSide(frontToUpload, "front");
-      const backImageUrl = backToUpload ? await uploadCardSide(backToUpload, "back") : null;
+      let frontImageUrl: string;
+      let backImageUrl: string | null;
+      try {
+        frontImageUrl = await uploadCardSide(frontToUpload, "front");
+        backImageUrl = backToUpload ? await uploadCardSide(backToUpload, "back") : null;
+      } catch (cause) {
+        throw cause instanceof Error ? cause : new Error(formatSaveError(cause, "Image upload failed"));
+      }
+
       const displayImageUrl = selectedDisplayImage?.image_url || frontImageUrl;
 
-      const { data: card, error: cardError } = await supabase.from("cards").insert({
+      const insertPayload = buildCardInsertPayload(form, {
         owner_id: userData.user.id,
         collection_id: collectionId,
-        ...cardMutation(form),
         original_image_url: frontImageUrl,
         front_image_url: displayImageUrl,
         back_image_url: backImageUrl,
@@ -448,15 +489,13 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
         image_source: selectedDisplayImage?.source || "user_upload",
         image_source_url: selectedDisplayImage?.source_url || null,
         image_replacement_status: selectedDisplayImage ? "accepted_suggestion" : "original",
-        scan_quality_json: {
-          front: frontQuality,
-          back: backQuality,
-        },
-      }).select("id").single();
+      });
+
+      const { data: card, error: cardError } = await supabase.from("cards").insert(insertPayload).select("id").single();
       if (cardError || !card) {
         await Promise.all(uploadedPaths.map(removeUploadedObject));
         uploadedPaths.length = 0;
-        throw cardError || new Error("Unable to create the card record.");
+        throw new Error(formatSaveError(cardError || new Error("No card returned"), "Could not save card to collection"));
       }
       createdCardId = card.id;
 
@@ -465,19 +504,22 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
       const { error: imageRowError } = await supabase.from("card_images").insert(imageRows);
       if (imageRowError) {
         const { error: cardRollbackError } = await supabase.from("cards").delete().eq("id", card.id).eq("owner_id", userData.user.id);
-        if (cardRollbackError) throw new Error(`${imageRowError.message} The uploaded images were preserved because the card record could not be rolled back.`);
+        if (cardRollbackError) throw new Error(formatSaveError(imageRowError, "Could not link card images"));
         await Promise.all(uploadedPaths.map(removeUploadedObject));
         createdCardId = null; uploadedPaths.length = 0;
-        throw imageRowError;
+        throw new Error(formatSaveError(imageRowError, "Could not link card images"));
       }
 
-      // Pricing metadata is fail-open: persist separately so a missing column
-      // or pricing issue can never undo a saved card.
+      // Optional metadata — fail-open so missing columns or pricing issues never block save.
+      if (frontQuality || backQuality) {
+        await saveOptionalCardMetadata(card.id, userData.user.id, {
+          scan_quality_json: { front: frontQuality, back: backQuality },
+        }, "scan quality");
+      }
       if (priceEstimate) {
-        try {
-          const priceRecord = { ...priceEstimate, saved_at: new Date().toISOString() };
-          await supabase.from("cards").update({ price_estimate_json: priceRecord }).eq("id", card.id).eq("owner_id", userData.user.id);
-        } catch { /* Card save remains successful even if pricing metadata cannot be stored. */ }
+        await saveOptionalCardMetadata(card.id, userData.user.id, {
+          price_estimate_json: { ...priceEstimate, saved_at: new Date().toISOString() },
+        }, "price estimate");
       }
 
       // Intelligence archiving is deliberately fail-open: a training-log problem must never undo a saved card.

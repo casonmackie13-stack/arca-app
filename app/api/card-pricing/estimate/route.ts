@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { authenticatedServerClient } from "@/lib/server-auth";
 import { searchRecentSales } from "@/lib/pricing/searchRecentSales";
-import { determinePricingBasis, estimateWithAI } from "@/lib/pricing/estimateWithAI";
+import { determinePricingBasis, estimateFromMetadataWithAI, estimateWithAI } from "@/lib/pricing/estimateWithAI";
 import {
   emptySalesBundle,
   normalizePricingCard,
@@ -12,11 +12,12 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
+const NO_SALES_WARNING =
+  "No live recent sales provider connected. Estimate is based on AI reasoning, not verified recent sales.";
+
 /**
- * AI-assisted price estimation. Runs AFTER card autofill as an additive
- * pipeline — it does not touch card identification/autofill. Fetches recent
- * sales/comps from the configured provider, then interprets them with AI.
- * Returns insufficient_data when no provider is configured or no sales exist.
+ * AI-assisted price estimation — additive post-autofill pipeline.
+ * When no sales provider is connected, uses OpenAI metadata-only estimation.
  */
 export async function POST(request: Request) {
   const auth = await authenticatedServerClient(request);
@@ -37,68 +38,49 @@ export async function POST(request: Request) {
 
   try {
     const provider = await searchRecentSales(card);
+    const hasLiveSales = provider.configured && totalSalesCount(provider.sales) > 0;
 
-    // No provider connected — be transparent, do not fabricate sales.
-    if (!provider.configured) {
+    // Live sales provider with data — interpret verified sales with AI.
+    if (hasLiveSales) {
+      const { basis, primarySales } = determinePricingBasis(card, provider.sales);
+      const { estimate, usedAI, warning } = await estimateWithAI(card, provider.sales, basis, primarySales);
+      const confidence = basis === "similar_comps" && estimate.confidence !== "low" ? "low" : estimate.confidence;
+      const warnings = [...provider.warnings];
+      if (warning) warnings.push(warning);
+      if (!usedAI) warnings.push("This estimate was computed statistically without AI interpretation.");
+
       const response: PriceEstimateResponse = {
-        estimated_value_low: null,
-        estimated_value_mid: null,
-        estimated_value_high: null,
+        estimated_value_low: estimate.estimated_value_low,
+        estimated_value_mid: estimate.estimated_value_mid,
+        estimated_value_high: estimate.estimated_value_high,
         currency: "USD",
-        confidence: "low",
-        pricing_basis: "insufficient_data",
-        notes: "Live pricing is not connected yet, so no recent sales are available. Enter an estimate manually.",
-        recent_sales: emptySalesBundle(),
-        warnings: provider.warnings,
-        provider: provider.provider,
-        generated_at: generatedAt,
-      };
-      return NextResponse.json(response);
-    }
-
-    const { basis, primarySales } = determinePricingBasis(card, provider.sales);
-
-    // Provider connected but returned nothing usable.
-    if (basis === "insufficient_data" || totalSalesCount(provider.sales) === 0) {
-      const notes = card.is_graded
-        ? "No recent sales found for this exact grade. Estimate is based on similar comps."
-        : "No recent raw sales found. Estimate is based on similar comps.";
-      const response: PriceEstimateResponse = {
-        estimated_value_low: null,
-        estimated_value_mid: null,
-        estimated_value_high: null,
-        currency: "USD",
-        confidence: "low",
-        pricing_basis: "insufficient_data",
-        notes: totalSalesCount(provider.sales) === 0 ? "No recent sales or comparable sales were found for this card." : notes,
+        confidence,
+        pricing_basis: basis,
+        notes: estimate.notes,
         recent_sales: provider.sales,
-        warnings: provider.warnings,
+        warnings,
         provider: provider.provider,
         generated_at: generatedAt,
       };
       return NextResponse.json(response);
     }
 
-    const { estimate, usedAI, warning } = await estimateWithAI(card, provider.sales, basis, primarySales);
-
-    // Fallback estimates from similar comps are always lower-confidence.
-    const confidence = basis === "similar_comps" && estimate.confidence !== "low" ? "low" : estimate.confidence;
-
-    const warnings = [...provider.warnings];
+    // No live sales — OpenAI metadata-only estimate.
+    const { estimate, warning } = await estimateFromMetadataWithAI(card);
+    const warnings = [NO_SALES_WARNING];
     if (warning) warnings.push(warning);
-    if (!usedAI) warnings.push("This estimate was computed statistically without AI interpretation.");
 
     const response: PriceEstimateResponse = {
       estimated_value_low: estimate.estimated_value_low,
       estimated_value_mid: estimate.estimated_value_mid,
       estimated_value_high: estimate.estimated_value_high,
       currency: "USD",
-      confidence,
-      pricing_basis: basis,
-      notes: estimate.notes,
-      recent_sales: provider.sales,
+      confidence: estimate.confidence,
+      pricing_basis: "ai_metadata_estimate",
+      notes: estimate.notes || "No live recent sales provider connected yet. This estimate is based on AI market reasoning from card metadata and similar general comps.",
+      recent_sales: emptySalesBundle(),
       warnings,
-      provider: provider.provider,
+      provider: "openai_metadata",
       generated_at: generatedAt,
     };
     return NextResponse.json(response);

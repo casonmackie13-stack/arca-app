@@ -69,5 +69,50 @@ export function validateCardValue(value: CardFormValue) {
 export function cardMutation(value: CardFormValue) {
   const estimatedValue = value.estimatedValue.replace(/[$,]/g, "").trim();
   const normalizedYear = normalizeCardYear(value.year);
-  return { player_name: value.playerName.trim(), sport: value.sport, year: normalizedYear || null, brand: value.brand.trim(), set_name: value.setName.trim(), card_number: value.cardNumber.trim(), team: value.team.trim(), parallel: value.parallel.trim(), rookie_card: value.rookieCard === "unknown" ? null : value.rookieCard === "yes", serial_number: value.serialNumber.trim(), condition: value.condition.trim(), grader: value.grader, grade: value.grader === "Raw" ? "Raw" : value.grade.trim(), estimated_value: estimatedValue ? Number(estimatedValue) : null, status: value.status, notes: value.notes.trim() };
+  const parsedEstimate = estimatedValue ? Number(estimatedValue) : null;
+  const safeEstimate = parsedEstimate != null && Number.isFinite(parsedEstimate) && parsedEstimate >= 0
+    ? parsedEstimate
+    : null;
+  return {
+    player_name: value.playerName.trim(),
+    sport: value.sport,
+    year: normalizedYear || null,
+    brand: value.brand.trim() || null,
+    set_name: value.setName.trim() || null,
+    card_number: value.cardNumber.trim() || null,
+    team: value.team.trim() || null,
+    parallel: value.parallel.trim() || null,
+    rookie_card: value.rookieCard === "unknown" ? null : value.rookieCard === "yes",
+    serial_number: value.serialNumber.trim() || null,
+    condition: value.condition.trim() || null,
+    grader: value.grader,
+    grade: value.grader === "Raw" ? "Raw" : value.grade.trim() || null,
+    estimated_value: safeEstimate,
+    status: value.status,
+    notes: value.notes.trim() || null,
+  };
+}
+
+function stripUndefined<T extends Record<string, unknown>>(record: T): T {
+  return Object.fromEntries(Object.entries(record).filter(([, v]) => v !== undefined)) as T;
+}
+
+/** Safe insert payload — known columns only, no undefined, empty strings → null. */
+export function buildCardInsertPayload(
+  value: CardFormValue,
+  extras: {
+    owner_id: string;
+    collection_id: string;
+    original_image_url: string;
+    front_image_url: string;
+    back_image_url: string | null;
+    original_front_image_url: string;
+    original_back_image_url: string | null;
+    display_image_url: string;
+    image_source: string;
+    image_source_url: string | null;
+    image_replacement_status: string;
+  },
+) {
+  return stripUndefined({ ...cardMutation(value), ...extras });
 }

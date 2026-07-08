@@ -84,6 +84,9 @@ export function deterministicEstimate(
 const PRICING_PROMPT =
   "You are estimating trading card market value using only the provided recent sales and comparable sales. Do not invent sales. If exact sales are unavailable, clearly state that the estimate is based on similar comps. Return JSON only.";
 
+const METADATA_PRICING_PROMPT =
+  "You are estimating the approximate market value of a trading card using only the provided card metadata. Do not invent specific recent sales. Do not claim that you found live comps. Give a cautious estimated USD range and a fair midpoint. If metadata is incomplete, lower confidence and explain what is missing. Return JSON only.";
+
 const estimateSchema = {
   type: "object",
   additionalProperties: false,
@@ -120,6 +123,97 @@ function coerceEstimate(raw: unknown): PricingEstimate | null {
     confidence,
     notes: typeof value.notes === "string" ? value.notes : "",
   };
+}
+
+/**
+ * OpenAI-only metadata estimate when no live sales provider is connected.
+ * Does not fabricate sales or claim verified comps.
+ */
+export async function estimateFromMetadataWithAI(
+  card: PricingCardInput,
+): Promise<{ estimate: PricingEstimate; warning?: string }> {
+  const emptyEstimate: PricingEstimate = {
+    estimated_value_low: null,
+    estimated_value_mid: null,
+    estimated_value_high: null,
+    confidence: "low",
+    notes: "AI pricing is not configured. Enter an estimate manually.",
+  };
+
+  if (!process.env.OPENAI_API_KEY) {
+    return { estimate: emptyEstimate, warning: "OPENAI_API_KEY is not configured." };
+  }
+
+  try {
+    const promptContext = {
+      card: {
+        label: cardLabel(card),
+        player_name: card.player_name,
+        sport: card.sport,
+        year: card.year,
+        brand: card.brand,
+        set_name: card.set_name,
+        card_number: card.card_number,
+        parallel: card.parallel,
+        rookie_card: card.rookie_card,
+        serial_number: card.serial_number,
+        condition: card.condition,
+        grading_company: card.grading_company,
+        grade: card.grade,
+        is_graded: card.is_graded,
+      },
+      instructions: card.is_graded
+        ? "This card is graded. Estimate based on grading company and exact grade from metadata. Be cautious — no live sales are available."
+        : "This card is raw/ungraded. Estimate raw market value from metadata. Be cautious — no live sales are available.",
+    };
+
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: process.env.OPENAI_PRICING_MODEL || "gpt-4.1-mini",
+        input: [
+          { role: "system", content: METADATA_PRICING_PROMPT },
+          { role: "user", content: `Estimate approximate market value from metadata only. Return JSON only.\n\n${JSON.stringify(promptContext)}` },
+        ],
+        text: { format: { type: "json_schema", name: "arca_metadata_price_estimate", strict: true, schema: estimateSchema } },
+        temperature: 0.2,
+      }),
+    });
+
+    const payload = await response.json() as Record<string, unknown>;
+    if (!response.ok) {
+      console.warn("[ARCA Pricing] Metadata AI request failed:", payload);
+      return {
+        estimate: { ...emptyEstimate, notes: "AI price estimation failed. Enter an estimate manually." },
+        warning: "AI estimation request failed.",
+      };
+    }
+
+    const parsed = coerceEstimate(JSON.parse(outputText(payload)));
+    if (!parsed) {
+      return {
+        estimate: { ...emptyEstimate, notes: "AI returned an unexpected response. Enter an estimate manually." },
+        warning: "AI returned an unexpected response.",
+      };
+    }
+
+    // Without verified sales, cap confidence at medium.
+    const confidence: PricingConfidence = parsed.confidence === "high" ? "medium" : parsed.confidence;
+    return {
+      estimate: {
+        ...parsed,
+        confidence,
+        notes: parsed.notes || "AI-estimated from card metadata. No verified recent sales were used.",
+      },
+    };
+  } catch (error) {
+    console.warn("[ARCA Pricing] Metadata AI estimation error:", error);
+    return {
+      estimate: { ...emptyEstimate, notes: "AI price estimation failed. Enter an estimate manually." },
+      warning: "AI estimation failed.",
+    };
+  }
 }
 
 /**
