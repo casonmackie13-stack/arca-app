@@ -13,10 +13,13 @@ export type ScannerPhase =
   | "PREVIEW"
   | "ERROR";
 
+export type CameraStatus = "idle" | "requesting" | "ready" | "failed";
+
 export type ScannerState = {
   phase: ScannerPhase;
   scanType: ScanType;
   autoCaptureEnabled: boolean;
+  cameraStatus: CameraStatus;
   error: string | null;
   previewUrl: string | null;
   capturedFile: File | null;
@@ -30,6 +33,7 @@ export type ScannerState = {
 
 export type ScannerEvent =
   | { type: "OPEN" }
+  | { type: "CAMERA_STATUS"; status: CameraStatus }
   | { type: "CAMERA_READY" }
   | { type: "CAMERA_ERROR"; message: string }
   | { type: "SET_SCAN_TYPE"; scanType: ScanType }
@@ -88,6 +92,7 @@ export const initialScannerState: ScannerState = {
   phase: "INITIALIZING",
   scanType: "raw",
   autoCaptureEnabled: false,
+  cameraStatus: "idle",
   error: null,
   previewUrl: null,
   capturedFile: null,

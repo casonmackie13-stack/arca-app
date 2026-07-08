@@ -1,6 +1,7 @@
 import {
   initialScannerState,
   isCameraPhase,
+  type CameraStatus,
   type ScannerEvent,
   type ScannerState,
 } from "@/lib/scanner/scannerTypes";
@@ -10,12 +11,16 @@ export function scannerReducer(state: ScannerState, event: ScannerEvent): Scanne
     case "OPEN":
       return { ...initialScannerState, phase: "INITIALIZING" };
 
+    case "CAMERA_STATUS":
+      if (state.phase === "ERROR" || state.phase === "PREVIEW") return state;
+      return { ...state, cameraStatus: event.status };
+
     case "CAMERA_READY":
       if (state.phase === "ERROR" || state.phase === "PREVIEW") return state;
-      return { ...state, phase: "SEARCHING", error: null };
+      return { ...state, phase: "SEARCHING", error: null, cameraStatus: "ready" };
 
     case "CAMERA_ERROR":
-      return { ...state, phase: "ERROR", error: event.message };
+      return { ...state, phase: "ERROR", error: event.message, cameraStatus: "failed" };
 
     case "SET_SCAN_TYPE":
       if (!isCameraPhase(state.phase) || state.phase === "CAPTURING") return state;
@@ -56,6 +61,7 @@ export function scannerReducer(state: ScannerState, event: ScannerEvent): Scanne
       return {
         ...state,
         phase: "INITIALIZING",
+        cameraStatus: "idle",
         previewUrl: null,
         capturedFile: null,
         capturedOriginalFile: null,

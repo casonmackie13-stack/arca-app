@@ -198,7 +198,7 @@ export function getAutoCaptureBlockReason(
   const opencvReady = options?.opencvReady ?? true;
   if (!opencvReady) {
     const state = getOpenCvLoadState();
-    if (state.status === "loading") return "opencv_loading";
+    if (state.status === "idle" || state.status === "loading") return "opencv_loading";
     if (state.status === "failed") return "opencv_failed";
     return "opencv_not_ready";
   }
@@ -255,7 +255,7 @@ export async function detectCardEdges(
   lastDetectionAt = now;
 
   const opencvState = getOpenCvLoadState();
-  if (opencvState.status === "loading") {
+  if (opencvState.status === "idle" || opencvState.status === "loading") {
     return emptyDetection("OpenCV loading");
   }
   if (opencvState.status === "failed") {

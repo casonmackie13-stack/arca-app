@@ -44,7 +44,7 @@ export type ScanMetadata = {
   fallbackCrop?: boolean;
   crop_method?: "opencv_corners" | "guide_fallback";
   crop_fallback_reason?: string;
-  opencv_status?: "loading" | "ready" | "failed";
+  opencv_status?: "idle" | "loading" | "ready" | "failed";
   edgeConfidence?: number;
   corners?: Point[];
   selected_burst_index?: number;

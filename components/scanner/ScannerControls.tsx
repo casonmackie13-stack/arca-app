@@ -4,7 +4,7 @@ import type { RefObject } from "react";
 import ScanTypeToggle from "@/components/scanner/ScanTypeToggle";
 import type { ScanProgressStep } from "@/lib/scanner/scannerStatus";
 import type { OpenCvStatus } from "@/lib/scanner/opencvLoader";
-import type { ScanType } from "@/lib/scanner/scannerTypes";
+import type { CameraStatus, ScanType } from "@/lib/scanner/scannerTypes";
 
 const PROGRESS_STEPS: { id: ScanProgressStep; label: string }[] = [
   { id: "front", label: "Scan Front" },
@@ -24,6 +24,8 @@ export default function ScannerControls({
   opencvStatusText,
   opencvStatus,
   opencvLoadMs,
+  opencvError,
+  cameraStatus,
   progressStep,
   autoCaptureEnabled,
   autoCaptureProgress,
@@ -44,9 +46,11 @@ export default function ScannerControls({
   activeSide: "front" | "back";
   scanType: ScanType;
   statusText: string;
-  opencvStatusText: string;
+  opencvStatusText: string | null;
   opencvStatus: OpenCvStatus;
   opencvLoadMs: number | null;
+  opencvError?: string | null;
+  cameraStatus: CameraStatus;
   progressStep: ScanProgressStep;
   autoCaptureEnabled: boolean;
   autoCaptureProgress: number;
@@ -119,20 +123,28 @@ export default function ScannerControls({
             <div className="scanner-status-pill inline-flex min-h-8 max-w-[min(92vw,22rem)] items-center justify-center rounded-full border border-white/12 bg-black/48 px-4 py-1.5">
               <p className="text-[12px] font-medium tracking-[-0.01em] text-white/92">{statusText}</p>
             </div>
-            <div
-              className={`inline-flex min-h-7 max-w-[min(92vw,24rem)] items-center justify-center rounded-full border px-3 py-1 text-[11px] font-medium tracking-[-0.01em] ${
-                opencvStatus === "ready"
-                  ? "border-[var(--gold-primary)]/35 bg-[var(--gold-primary)]/10 text-[var(--gold-primary)]"
-                  : opencvStatus === "failed"
-                    ? "border-[var(--status-warning)]/50 bg-[var(--status-warning)]/10 text-[var(--status-warning)]"
-                    : "border-white/12 bg-black/40 text-white/72"
-              }`}
-            >
-              {opencvStatusText}
-              {opencvStatus === "ready" && opencvLoadMs != null ? (
-                <span className="ml-1.5 text-white/45">({opencvLoadMs}ms)</span>
-              ) : null}
-            </div>
+            {opencvStatusText && (
+              <div
+                className={`inline-flex min-h-7 max-w-[min(92vw,24rem)] items-center justify-center rounded-full border px-3 py-1 text-[11px] font-medium tracking-[-0.01em] ${
+                  opencvStatus === "ready"
+                    ? "border-[var(--gold-primary)]/35 bg-[var(--gold-primary)]/10 text-[var(--gold-primary)]"
+                    : opencvStatus === "failed"
+                      ? "border-[var(--status-warning)]/50 bg-[var(--status-warning)]/10 text-[var(--status-warning)]"
+                      : "border-white/12 bg-black/40 text-white/72"
+                }`}
+                title={opencvStatus === "failed" ? opencvError ?? undefined : undefined}
+              >
+                {opencvStatusText}
+                {opencvStatus === "ready" && opencvLoadMs != null ? (
+                  <span className="ml-1.5 text-white/45">({opencvLoadMs}ms)</span>
+                ) : null}
+              </div>
+            )}
+            {cameraStatus === "failed" && (
+              <div className="inline-flex min-h-7 max-w-[min(92vw,24rem)] items-center justify-center rounded-full border border-red-400/50 bg-red-500/10 px-3 py-1 text-[11px] font-medium text-red-200">
+                Camera unavailable
+              </div>
+            )}
           </div>
         </div>
       </header>

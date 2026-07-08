@@ -8,7 +8,7 @@ import { domRectLike, mapGuideFrameToVideoCrop } from "@/lib/scanner/cropMapping
 import { isScannerDebugEnabled } from "@/lib/scanner/scannerDebug";
 import type { OpenCvLoadState } from "@/lib/scanner/opencvLoader";
 import type { CardEdgeDetection, ScanMetadata } from "@/lib/scanner/scanMetadata";
-import type { ScanType } from "@/lib/scanner/scannerTypes";
+import type { CameraStatus, ScanType } from "@/lib/scanner/scannerTypes";
 
 export default function ScannerDebugOverlay({
   videoRef,
@@ -16,10 +16,11 @@ export default function ScannerDebugOverlay({
   scanType,
   activeSide,
   active,
-  opencv = { status: "loading", error: null, loadMs: null },
+  opencv = { status: "idle", error: null, loadMs: null },
   detection = null,
   autoCaptureBlockReason = null,
   captureMetadata = null,
+  cameraStatus = "idle",
   lastCaptureCrop,
   lastOutputSize,
 }: {
@@ -32,6 +33,7 @@ export default function ScannerDebugOverlay({
   detection?: CardEdgeDetection | null;
   autoCaptureBlockReason?: string | null;
   captureMetadata?: ScanMetadata | null;
+  cameraStatus?: CameraStatus;
   lastCaptureCrop?: string | null;
   lastOutputSize?: string | null;
 }) {
@@ -64,6 +66,7 @@ export default function ScannerDebugOverlay({
         `side=${activeSide}`,
         `captureFn=${ACTIVE_CAPTURE_FUNCTION}`,
         `scan=${scanType}`,
+        `camera=${cameraStatus ?? "unknown"}`,
         `opencv=${opencv.status}${opencv.loadMs != null ? ` (${opencv.loadMs}ms)` : ""}`,
         opencv.error ? `opencvError=${opencv.error}` : "opencvError=none",
         `found=${detection?.found ? "yes" : "no"}`,
@@ -99,6 +102,7 @@ export default function ScannerDebugOverlay({
     activeSide,
     autoCaptureBlockReason,
     captureMetadata,
+    cameraStatus,
     detection,
     guideFrameRef,
     lastCaptureCrop,

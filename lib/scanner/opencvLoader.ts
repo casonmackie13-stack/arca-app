@@ -49,7 +49,7 @@ type OpenCvMatVector = { size: () => number; get: (index: number) => OpenCvMat; 
 
 export type { OpenCvMat, OpenCvMatVector };
 
-export type OpenCvStatus = "loading" | "ready" | "failed";
+export type OpenCvStatus = "idle" | "loading" | "ready" | "failed";
 
 export type OpenCvLoadState = {
   status: OpenCvStatus;
@@ -64,7 +64,7 @@ const SCRIPT_SELECTOR = "script[data-arca-opencv]";
 
 let loadPromise: Promise<OpenCvNamespace> | null = null;
 let cachedCv: OpenCvNamespace | null = null;
-let loadState: OpenCvLoadState = { status: "loading", error: null, loadMs: null };
+let loadState: OpenCvLoadState = { status: "idle", error: null, loadMs: null };
 const listeners = new Set<(state: OpenCvLoadState) => void>();
 
 function emitLoadState(next: OpenCvLoadState) {
@@ -287,10 +287,12 @@ export async function loadOpenCv(): Promise<OpenCvNamespace | null> {
   }
 }
 
-export function opencvStatusLabel(status: OpenCvStatus): string {
+export function opencvStatusLabel(status: OpenCvStatus): string | null {
   switch (status) {
+    case "idle":
+      return null;
     case "loading":
-      return "Preparing scanner…";
+      return "Preparing edge detection…";
     case "ready":
       return "Edge detection ready";
     case "failed":
@@ -301,6 +303,6 @@ export function opencvStatusLabel(status: OpenCvStatus): string {
 export function resetOpenCvLoaderForTests() {
   loadPromise = null;
   cachedCv = null;
-  loadState = { status: "loading", error: null, loadMs: null };
+  loadState = { status: "idle", error: null, loadMs: null };
   document.querySelector(SCRIPT_SELECTOR)?.remove();
 }

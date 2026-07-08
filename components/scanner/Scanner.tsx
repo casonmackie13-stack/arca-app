@@ -27,6 +27,7 @@ import { SCANNER_CSS_DEFAULTS, useScannerLayout } from "@/lib/scanner/useScanner
 import {
   initialScannerState,
   isCameraPhase,
+  type CameraStatus,
   type CaptureMode,
   type GuidedCaptureResult,
   type ScanSequence,
@@ -92,8 +93,11 @@ export default function Scanner({
       : "camera";
 
   const cameraActive = open && mode === "camera";
-  const opencv = useOpenCvLoader(open);
-  const detectionActive = cameraActive && state.phase !== "CAPTURING" && state.phase !== "INITIALIZING";
+  const cameraStarted = state.cameraStatus === "requesting" || state.cameraStatus === "ready";
+  const opencv = useOpenCvLoader(open, true, cameraStarted);
+  const detectionActive = cameraActive
+    && state.phase !== "CAPTURING"
+    && opencv.status === "ready";
 
   const { detection, stableMs, readyForAutoCapture, autoCaptureBlockReason } = useLiveDetection(
     videoRef,
@@ -111,6 +115,10 @@ export default function Scanner({
     hapticLockRef.current = false;
     autoCaptureTriggeredRef.current = false;
   }, [open, activeSide, resetKey]);
+
+  const handleCameraStatusChange = useCallback((status: CameraStatus) => {
+    dispatch({ type: "CAMERA_STATUS", status });
+  }, []);
 
   const handleCameraReady = useCallback(() => {
     dispatch({ type: "CAMERA_READY" });
@@ -251,6 +259,8 @@ export default function Scanner({
   if (readyForAutoCapture) guideVisualState = "locked";
   else if (detection?.found && detection.confidence >= 0.45) guideVisualState = "detected";
 
+  const opencvStatusText = opencvStatusLabel(opencv.status);
+
   const content = (
     <div ref={layoutRootRef} style={scannerRootStyle} className="text-white">
       {mode === "error" && (
@@ -293,6 +303,7 @@ export default function Scanner({
           <CameraView
             active={cameraActive}
             videoRef={videoRef}
+            onStatusChange={handleCameraStatusChange}
             onReady={handleCameraReady}
             onError={handleCameraError}
           />
@@ -315,6 +326,7 @@ export default function Scanner({
             opencv={opencv}
             detection={detection}
             autoCaptureBlockReason={autoCaptureBlockReason}
+            cameraStatus={state.cameraStatus}
             captureMetadata={state.captureMetadata}
             lastCaptureCrop={lastCaptureCrop}
             lastOutputSize={lastOutputSize}
@@ -323,14 +335,16 @@ export default function Scanner({
             activeSide={activeSide}
             scanType={state.scanType}
             statusText={statusText}
-            opencvStatusText={opencvStatusLabel(opencv.status)}
+            opencvStatusText={opencvStatusText}
             opencvStatus={opencv.status}
             opencvLoadMs={opencv.loadMs}
+            opencvError={opencv.error}
+            cameraStatus={state.cameraStatus}
             progressStep={progressStep}
             autoCaptureEnabled={state.autoCaptureEnabled}
             autoCaptureProgress={autoCaptureProgress}
             capturing={state.phase === "CAPTURING"}
-            cameraInitializing={state.phase === "INITIALIZING"}
+            cameraInitializing={state.cameraStatus === "requesting" || state.phase === "INITIALIZING"}
             captureError={state.error}
             showSkipBack={showSkipBack}
             headerRef={headerRef}
