@@ -123,6 +123,10 @@ export default function SimpleScanner({
     if (mountedRef.current) setCameraStatus(status);
   }, []);
 
+  const handleCameraReady = useCallback(() => {
+    if (mountedRef.current) setCameraStatus("ready");
+  }, []);
+
   const handleCameraError = useCallback((message: string) => {
     if (!mountedRef.current) return;
     setErrorMessage(message);
@@ -263,7 +267,7 @@ export default function SimpleScanner({
             active={cameraActive}
             videoRef={videoRef}
             onStatusChange={handleCameraStatusChange}
-            onReady={() => handleCameraStatusChange("ready")}
+            onReady={handleCameraReady}
             onError={handleCameraError}
           />
 
