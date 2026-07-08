@@ -9,7 +9,7 @@ import DisplayImagePanel from "@/components/card/DisplayImagePanel";
 import RecentSalesPanel from "@/components/card/RecentSalesPanel";
 import CollectionSelector from "@/components/collection/CollectionSelector";
 import QuickCollectionDialog from "@/components/collection/QuickCollectionDialog";
-import Scanner from "@/components/scanner/Scanner";
+import ScannerWithBoundary from "@/components/scanner/ScannerWithBoundary";
 import CardCapturePanel from "@/components/scanner/CardCapturePanel";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -505,7 +505,7 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
     </div></main>}
 
     <QuickCollectionDialog open={quickCreateOpen} onClose={() => setQuickCreateOpen(false)} onCreated={handleCollectionCreated}/>
-    <Scanner
+    <ScannerWithBoundary
       key={scannerSession ? `${scannerSession.activeSide}-${scannerSession.resetKey}` : "idle"}
       open={scannerOpen}
       activeSide={scannerSession?.activeSide ?? "front"}

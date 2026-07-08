@@ -21,6 +21,7 @@ export default function ScannerControls({
   activeSide,
   scanType,
   statusText,
+  opencvFeatureEnabled,
   opencvStatusText,
   opencvStatus,
   opencvLoadMs,
@@ -46,6 +47,7 @@ export default function ScannerControls({
   activeSide: "front" | "back";
   scanType: ScanType;
   statusText: string;
+  opencvFeatureEnabled: boolean;
   opencvStatusText: string | null;
   opencvStatus: OpenCvStatus;
   opencvLoadMs: number | null;
@@ -171,18 +173,20 @@ export default function ScannerControls({
             />
 
             <div className="flex w-full items-center justify-center gap-2.5">
-              <button
-                type="button"
-                onClick={onToggleAutoCapture}
-                aria-pressed={autoCaptureEnabled}
-                className={`min-w-[7.5rem] rounded-full border px-4 py-2 text-[12px] font-semibold tracking-[-0.01em] transition ${
-                  autoCaptureEnabled
-                    ? "border-[var(--gold-primary)]/60 bg-[var(--gold-primary)]/18 text-[var(--gold-primary)]"
-                    : "border-white/18 bg-black/42 text-white/78"
-                }`}
-              >
-                {autoCaptureEnabled ? "Auto Capture On" : "Auto Capture Off"}
-              </button>
+              {opencvFeatureEnabled && (
+                <button
+                  type="button"
+                  onClick={onToggleAutoCapture}
+                  aria-pressed={autoCaptureEnabled}
+                  className={`min-w-[7.5rem] rounded-full border px-4 py-2 text-[12px] font-semibold tracking-[-0.01em] transition ${
+                    autoCaptureEnabled
+                      ? "border-[var(--gold-primary)]/60 bg-[var(--gold-primary)]/18 text-[var(--gold-primary)]"
+                      : "border-white/18 bg-black/42 text-white/78"
+                  }`}
+                >
+                  {autoCaptureEnabled ? "Auto Capture On" : "Auto Capture Off"}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -212,7 +216,7 @@ export default function ScannerControls({
               />
             </div>
 
-            {autoCaptureEnabled && autoCaptureProgress > 0 && !capturing && (
+            {opencvFeatureEnabled && autoCaptureEnabled && autoCaptureProgress > 0 && !capturing && (
               <div className="h-1 w-32 overflow-hidden rounded-full bg-white/14">
                 <div
                   className="h-full rounded-full bg-[var(--gold-primary)] transition-[width] duration-100 ease-linear"

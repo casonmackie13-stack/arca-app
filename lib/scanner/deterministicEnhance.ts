@@ -6,6 +6,7 @@ import {
   perspectiveCorrect,
 } from "@/lib/scanner/cardVision";
 import { scaleCanvasTo } from "@/lib/scanner/burstCapture";
+import { isOpenCvScannerEnabled } from "@/lib/scanner/scannerFlags";
 
 export type CropMethod = "opencv_corners" | "guide_fallback";
 
@@ -125,11 +126,16 @@ export async function applyDeterministicEnhanceAsync(
   source: HTMLCanvasElement,
   quality?: ScanQualityMetrics,
 ): Promise<HTMLCanvasElement> {
-  await new Promise<void>((resolve) => {
-    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => resolve());
-    else setTimeout(resolve, 0);
-  });
-  return applyDeterministicEnhance(source, quality);
+  try {
+    await new Promise<void>((resolve) => {
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => resolve());
+      else setTimeout(resolve, 0);
+    });
+    return applyDeterministicEnhance(source, quality);
+  } catch (error) {
+    console.warn("[ARCA Scanner] Enhancement failed, using source frame:", error);
+    return source;
+  }
 }
 
 /**
@@ -151,6 +157,15 @@ export async function finalizeCaptureCanvas(options: {
     outputHeight,
     confidenceThreshold = PERSPECTIVE_CONFIDENCE_THRESHOLD,
   } = options;
+
+  if (!isOpenCvScannerEnabled()) {
+    return {
+      canvas: scaleCanvasTo(sourceCanvas, outputWidth, outputHeight),
+      cropMethod: "guide_fallback",
+      reason: "opencv_disabled",
+      perspectiveCorrected: false,
+    };
+  }
 
   const hasValidCorners = Boolean(corners?.length === 4 && confidence >= confidenceThreshold);
 

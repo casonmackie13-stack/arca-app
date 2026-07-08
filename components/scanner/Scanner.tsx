@@ -15,6 +15,7 @@ import {
   judgeImageQuality,
   shouldRequestAiQuality,
 } from "@/lib/scanner/imageQualityJudge";
+import { isOpenCvScannerEnabled } from "@/lib/scanner/scannerFlags";
 import { opencvStatusLabel } from "@/lib/scanner/opencvLoader";
 import { resolveScannerMessage } from "@/lib/scanner/scannerMessages";
 import { scanFlowLog } from "@/lib/scanner/scanFlowLog";
@@ -80,6 +81,7 @@ export default function Scanner({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const hapticLockRef = useRef(false);
   const autoCaptureTriggeredRef = useRef(false);
+  const mountedRef = useRef(true);
   const [state, dispatch] = useReducer(scannerReducer, initialScannerState);
   const [lastCaptureCrop, setLastCaptureCrop] = useState<string | null>(null);
   const [lastOutputSize, setLastOutputSize] = useState<string | null>(null);
@@ -93,9 +95,11 @@ export default function Scanner({
       : "camera";
 
   const cameraActive = open && mode === "camera";
+  const opencvFeatureEnabled = isOpenCvScannerEnabled();
   const cameraStarted = state.cameraStatus === "requesting" || state.cameraStatus === "ready";
-  const opencv = useOpenCvLoader(open, true, cameraStarted);
-  const detectionActive = cameraActive
+  const opencv = useOpenCvLoader(open && opencvFeatureEnabled, true, cameraStarted);
+  const detectionActive = opencvFeatureEnabled
+    && cameraActive
     && state.phase !== "CAPTURING"
     && opencv.status === "ready";
 
@@ -109,12 +113,19 @@ export default function Scanner({
   const layoutRootRef = useScannerLayout(open, videoRef, state.scanType, detection);
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!open) return;
-    scanFlowLog("CANONICAL_SCANNER_MOUNTED");
+    scanFlowLog("CANONICAL_SCANNER_MOUNTED", { opencvFeatureEnabled });
     dispatch({ type: "OPEN" });
     hapticLockRef.current = false;
     autoCaptureTriggeredRef.current = false;
-  }, [open, activeSide, resetKey]);
+  }, [open, activeSide, resetKey, opencvFeatureEnabled]);
 
   const handleCameraStatusChange = useCallback((status: CameraStatus) => {
     dispatch({ type: "CAMERA_STATUS", status });
@@ -129,7 +140,7 @@ export default function Scanner({
   }, []);
 
   const runCapture = useCallback(async (captureMode: CaptureMode) => {
-    if (!videoRef.current || state.phase === "CAPTURING") return;
+    if (!videoRef.current || state.phase === "CAPTURING" || !mountedRef.current) return;
     scanFlowLog("Capture called: runCapture", {
       mode: captureMode,
       scanType: state.scanType,
@@ -143,10 +154,12 @@ export default function Scanner({
         scanType: state.scanType,
         captureMode,
         onCropComputed: (crop, output) => {
+          if (!mountedRef.current) return;
           setLastCaptureCrop(`${Math.round(crop.sx)},${Math.round(crop.sy)},${Math.round(crop.sw)}x${Math.round(crop.sh)}`);
           setLastOutputSize(`${output.width}x${output.height}`);
         },
       });
+      if (!mountedRef.current) return;
       const previewUrl = URL.createObjectURL(result.file);
       dispatch({
         type: "CAPTURE_SUCCESS",
@@ -158,6 +171,7 @@ export default function Scanner({
         metadata: result.metadata,
       });
     } catch (cause) {
+      if (!mountedRef.current) return;
       dispatch({
         type: "CAPTURE_FAILED",
         message: cause instanceof Error ? cause.message : "Capture failed.",
@@ -177,7 +191,7 @@ export default function Scanner({
   }, [readyForAutoCapture]);
 
   useEffect(() => {
-    if (!state.autoCaptureEnabled || !readyForAutoCapture) {
+    if (!opencvFeatureEnabled || !state.autoCaptureEnabled || !readyForAutoCapture) {
       autoCaptureTriggeredRef.current = false;
       return;
     }
@@ -185,7 +199,7 @@ export default function Scanner({
     if (autoCaptureTriggeredRef.current) return;
     autoCaptureTriggeredRef.current = true;
     void runCapture("auto");
-  }, [readyForAutoCapture, runCapture, state.autoCaptureEnabled, state.phase]);
+  }, [opencvFeatureEnabled, readyForAutoCapture, runCapture, state.autoCaptureEnabled, state.phase]);
 
   useEffect(() => {
     if (state.phase !== "PREVIEW" || !state.capturedFile || !state.qualityRecord) return;
@@ -194,11 +208,16 @@ export default function Scanner({
     let active = true;
     dispatch({ type: "AI_QUALITY_START" });
 
-    void judgeImageQuality(state.capturedFile).then((quality) => {
-      if (!active) return;
-      if (quality) dispatch({ type: "AI_QUALITY_SUCCESS", quality });
-      else dispatch({ type: "AI_QUALITY_FAILED" });
-    });
+    void judgeImageQuality(state.capturedFile)
+      .then((quality) => {
+        if (!active || !mountedRef.current) return;
+        if (quality) dispatch({ type: "AI_QUALITY_SUCCESS", quality });
+        else dispatch({ type: "AI_QUALITY_FAILED" });
+      })
+      .catch((error) => {
+        console.warn("[ARCA Scanner] AI quality check failed:", error);
+        if (active && mountedRef.current) dispatch({ type: "AI_QUALITY_FAILED" });
+      });
 
     return () => {
       active = false;
@@ -341,6 +360,7 @@ export default function Scanner({
             opencvError={opencv.error}
             cameraStatus={state.cameraStatus}
             progressStep={progressStep}
+            opencvFeatureEnabled={opencvFeatureEnabled}
             autoCaptureEnabled={state.autoCaptureEnabled}
             autoCaptureProgress={autoCaptureProgress}
             capturing={state.phase === "CAPTURING"}

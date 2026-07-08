@@ -18,20 +18,27 @@ export function drawNativeVideoCrop(
   canvas.width = Math.max(1, Math.round(crop.sw));
   canvas.height = Math.max(1, Math.round(crop.sh));
   const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas is unavailable.");
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(
-    video,
-    crop.sx,
-    crop.sy,
-    crop.sw,
-    crop.sh,
-    0,
-    0,
-    canvas.width,
-    canvas.height,
-  );
+  if (!ctx) {
+    throw new Error("Canvas is unavailable.");
+  }
+  try {
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(
+      video,
+      crop.sx,
+      crop.sy,
+      crop.sw,
+      crop.sh,
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    );
+  } catch (error) {
+    console.warn("[ARCA Scanner] drawNativeVideoCrop failed:", error);
+    throw error instanceof Error ? error : new Error("Could not capture video frame.");
+  }
   return canvas;
 }
 

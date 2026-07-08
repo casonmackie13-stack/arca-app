@@ -8,6 +8,7 @@ import {
   type OpenCvMat,
   type OpenCvMatVector,
 } from "@/lib/scanner/opencvLoader";
+import { isOpenCvScannerEnabled } from "@/lib/scanner/scannerFlags";
 import type { Point, ScanDetectionResult, ScanQualityMetrics } from "@/lib/scanner/scanMetadata";
 
 export type EnhancementLevel = "natural" | "strong";
@@ -255,6 +256,9 @@ export async function detectCardEdges(
   lastDetectionAt = now;
 
   const opencvState = getOpenCvLoadState();
+  if (!isOpenCvScannerEnabled()) {
+    return emptyDetection("OpenCV disabled");
+  }
   if (opencvState.status === "idle" || opencvState.status === "loading") {
     return emptyDetection("OpenCV loading");
   }

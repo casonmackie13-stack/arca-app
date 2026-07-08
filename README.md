@@ -20,7 +20,10 @@ NEXT_PUBLIC_SUPABASE_URL=your-supabase-project-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-or-publishable-key
 OPENAI_API_KEY=your-openai-api-key
 OPENAI_VISION_MODEL=gpt-4.1-mini
+NEXT_PUBLIC_ENABLE_OPENCV_SCANNER=false
 ```
+
+`NEXT_PUBLIC_ENABLE_OPENCV_SCANNER` controls OpenCV edge detection in the scanner. Leave `false` until edge detection is stable; manual guide-frame capture works without it.
 
 `OPENAI_API_KEY` is required for `/api/card-autofill` and `/api/card-detection`. `OPENAI_VISION_MODEL` is optional; the app falls back to `gpt-4.1-mini` for autofill and `gpt-4.1` for card detection when unset.
 

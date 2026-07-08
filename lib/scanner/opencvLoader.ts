@@ -1,5 +1,7 @@
 "use client";
 
+import { isOpenCvScannerEnabled } from "@/lib/scanner/scannerFlags";
+
 declare global {
   interface Window {
     cv?: OpenCvNamespace & { onRuntimeInitialized?: () => void };
@@ -261,9 +263,10 @@ async function loadOpenCvInternal(): Promise<OpenCvNamespace> {
   }
 }
 
-/** Start loading OpenCV immediately — safe to call multiple times. */
+/** Start loading OpenCV immediately — safe to call multiple times. No-op when feature flag is off. */
 export function preloadOpenCv(): void {
   if (typeof window === "undefined") return;
+  if (!isOpenCvScannerEnabled()) return;
   if (cachedCv || loadState.status === "ready") return;
   if (!loadPromise) {
     loadPromise = loadOpenCvInternal().catch((error) => {
@@ -273,9 +276,10 @@ export function preloadOpenCv(): void {
   }
 }
 
-/** Returns OpenCV when ready; null when load failed. */
+/** Returns OpenCV when ready; null when load failed or disabled. */
 export async function loadOpenCv(): Promise<OpenCvNamespace | null> {
   if (typeof window === "undefined") return null;
+  if (!isOpenCvScannerEnabled()) return null;
   if (cachedCv) return cachedCv;
   if (loadState.status === "failed") return null;
 

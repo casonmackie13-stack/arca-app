@@ -8,6 +8,7 @@ import {
   isReadyForAutoCapture,
 } from "@/lib/scanner/cardVision";
 import type { OpenCvStatus } from "@/lib/scanner/opencvLoader";
+import { isOpenCvScannerEnabled } from "@/lib/scanner/scannerFlags";
 import type { CardEdgeDetection, ScanPoint } from "@/lib/scanner/scanMetadata";
 
 const TARGET_FPS = 10;
@@ -27,13 +28,15 @@ export function useLiveDetection(
   const lastTickRef = useRef(0);
   const runningRef = useRef(false);
 
-  const opencvReady = opencvStatus === "ready";
+  const opencvFeatureEnabled = isOpenCvScannerEnabled();
+  const opencvReady = opencvFeatureEnabled && opencvStatus === "ready";
 
   useEffect(() => {
-    if (!active || !opencvReady) {
+    if (!opencvFeatureEnabled || !active || !opencvReady) {
       stableSinceRef.current = null;
       previousCornersRef.current = undefined;
       if (!opencvReady) {
+        setDetection(null);
         setStableMs(0);
       }
       return;
@@ -75,6 +78,8 @@ export function useLiveDetection(
           stableSinceRef.current = null;
           setStableMs(0);
         }
+      } catch (error) {
+        console.warn("[ARCA Scanner] Live detection tick failed:", error);
       } finally {
         runningRef.current = false;
         if (!cancelled) rafRef.current = requestAnimationFrame(tick);
@@ -88,15 +93,17 @@ export function useLiveDetection(
       stableSinceRef.current = null;
       previousCornersRef.current = undefined;
     };
-  }, [active, opencvReady, scanType, videoRef]);
+  }, [active, opencvFeatureEnabled, opencvReady, scanType, videoRef]);
 
-  const autoCaptureBlockReason = getAutoCaptureBlockReason(detection, stableMs, { opencvReady });
+  const autoCaptureBlockReason = opencvFeatureEnabled
+    ? getAutoCaptureBlockReason(detection, stableMs, { opencvReady })
+    : "opencv_disabled";
 
   return {
     detection,
     stableMs,
     autoCaptureBlockReason,
-    readyForAutoCapture: detection
+    readyForAutoCapture: opencvFeatureEnabled && detection
       ? isReadyForAutoCapture(detection, stableMs, { opencvReady })
       : false,
   };
