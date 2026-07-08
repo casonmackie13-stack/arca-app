@@ -10,11 +10,7 @@ import ScannerPortal from "@/components/scanner/ScannerPortal";
 import ScannerPreview from "@/components/scanner/ScannerPreview";
 import "./scanner.css";
 import { processGuidedCapture } from "@/lib/scanner/captureProcessor";
-import {
-  aiQualityToBadge,
-  judgeImageQuality,
-  shouldRequestAiQuality,
-} from "@/lib/scanner/imageQualityJudge";
+import { AUTO_CAPTURE_STABLE_MS } from "@/lib/scanner/core/constants";
 import { isOpenCvScannerEnabled } from "@/lib/scanner/scannerFlags";
 import { opencvStatusLabel } from "@/lib/scanner/opencvLoader";
 import { resolveScannerMessage } from "@/lib/scanner/scannerMessages";
@@ -54,7 +50,10 @@ function triggerLockHaptic() {
   }
 }
 
-/** Canonical fullscreen scanner for the bottom Add button and Add Card capture step. */
+/**
+ * Canonical document scanner — camera → live guidance → native capture → OpenCV on captured frame.
+ * Post-scan AI runs only in AddCardClient, never during live preview.
+ */
 export default function Scanner({
   open,
   activeSide,
@@ -121,7 +120,7 @@ export default function Scanner({
 
   useEffect(() => {
     if (!open) return;
-    scanFlowLog("CANONICAL_SCANNER_MOUNTED", { opencvFeatureEnabled });
+    scanFlowLog("DOCUMENT_SCANNER_MOUNTED", { opencvFeatureEnabled });
     dispatch({ type: "OPEN" });
     hapticLockRef.current = false;
     autoCaptureTriggeredRef.current = false;
@@ -141,11 +140,7 @@ export default function Scanner({
 
   const runCapture = useCallback(async (captureMode: CaptureMode) => {
     if (!videoRef.current || state.phase === "CAPTURING" || !mountedRef.current) return;
-    scanFlowLog("Capture called: runCapture", {
-      mode: captureMode,
-      scanType: state.scanType,
-      hasGuideRef: Boolean(guideFrameRef.current),
-    });
+    scanFlowLog("Capture called", { mode: captureMode, scanType: state.scanType });
     dispatch({ type: "CAPTURE_START", mode: captureMode });
     try {
       const result = await processGuidedCapture({
@@ -201,29 +196,6 @@ export default function Scanner({
     void runCapture("auto");
   }, [opencvFeatureEnabled, readyForAutoCapture, runCapture, state.autoCaptureEnabled, state.phase]);
 
-  useEffect(() => {
-    if (state.phase !== "PREVIEW" || !state.capturedFile || !state.qualityRecord) return;
-    if (!shouldRequestAiQuality(state.qualityRecord.overall_badge)) return;
-
-    let active = true;
-    dispatch({ type: "AI_QUALITY_START" });
-
-    void judgeImageQuality(state.capturedFile)
-      .then((quality) => {
-        if (!active || !mountedRef.current) return;
-        if (quality) dispatch({ type: "AI_QUALITY_SUCCESS", quality });
-        else dispatch({ type: "AI_QUALITY_FAILED" });
-      })
-      .catch((error) => {
-        console.warn("[ARCA Scanner] AI quality check failed:", error);
-        if (active && mountedRef.current) dispatch({ type: "AI_QUALITY_FAILED" });
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [state.capturedFile, state.phase, state.qualityRecord]);
-
   function closeScanner() {
     dispatch({ type: "CLOSE" });
     onClose();
@@ -239,22 +211,12 @@ export default function Scanner({
 
   function useCapture() {
     if (!state.capturedFile || !state.capturedOriginalFile) return;
-    const qualityRecord = state.qualityRecord
-      ? {
-        ...state.qualityRecord,
-        ai_quality_notes: state.aiQuality?.recommended_action ?? state.qualityRecord.ai_quality_notes ?? null,
-        overall_badge: state.aiQuality
-          ? aiQualityToBadge(state.aiQuality)
-          : state.qualityRecord.overall_badge,
-      }
-      : undefined;
     onUseCapture({
       file: state.capturedFile,
       originalFile: state.capturedOriginalFile,
       scanType: state.scanType,
-      qualityRecord,
+      qualityRecord: state.qualityRecord ?? undefined,
       metadata: state.captureMetadata ?? undefined,
-      aiQuality: state.aiQuality,
     }, activeSide);
   }
 
@@ -271,7 +233,7 @@ export default function Scanner({
   const statusText = scannerStatusDisplay(state.phase, scannerMessage, detection);
   const progressStep = scanProgressStep(activeSide, mode);
   const autoCaptureProgress = state.autoCaptureEnabled
-    ? Math.min(100, Math.round((stableMs / 800) * 100))
+    ? Math.min(100, Math.round((stableMs / AUTO_CAPTURE_STABLE_MS) * 100))
     : 0;
 
   let guideVisualState: GuideFrameVisualState = "searching";
@@ -385,15 +347,12 @@ export default function Scanner({
           previewUrl={state.previewUrl}
           scanType={state.scanType}
           side={activeSide}
-          qualityBadge={state.aiQuality
-            ? aiQualityToBadge(state.aiQuality)
-            : state.qualityRecord?.overall_badge}
-          qualityLoading={state.aiQualityLoading}
+          qualityBadge={state.qualityRecord?.overall_badge}
+          qualityLoading={false}
           retryMessage={
-            state.aiQuality?.recommended_action
-            ?? (state.qualityRecord && state.qualityRecord.overall_badge !== "excellent"
+            state.qualityRecord && state.qualityRecord.overall_badge !== "excellent"
               ? "This photo may be blurry or glared. Retake for better listing quality?"
-              : "")
+              : ""
           }
           onRetake={retake}
           onUse={useCapture}

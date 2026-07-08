@@ -1,4 +1,5 @@
 import type { CardEdgeDetection, ScannerMessage } from "@/lib/scanner/scanMetadata";
+import { AUTO_CAPTURE_STABLE_MS } from "@/lib/scanner/core/constants";
 
 const LABELS: Record<ScannerMessage, string> = {
   "find-edges": "Looking for card…",
@@ -31,9 +32,9 @@ export function resolveScannerMessage(
 
   const stableEnough = detection.confidence >= 0.55
     && quality.stabilityScore >= 0.65
-    && stableMs >= 800;
+    && stableMs >= AUTO_CAPTURE_STABLE_MS;
 
   if (stableEnough) return "ready";
-  if (detection.found && detection.confidence >= 0.45) return "hold-steady";
+  if (detection.confidence >= 0.45) return "hold-steady";
   return "find-edges";
 }

@@ -74,6 +74,10 @@ export default function ScannerDebugOverlay({
         detection?.corners?.length ? `corners=${detection.corners.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(" ")}` : "corners=none",
         `autoBlock=${autoCaptureBlockReason ?? "none"}`,
         captureMetadata?.crop_method ? `lastCropMethod=${captureMetadata.crop_method}` : "lastCropMethod=none",
+        captureMetadata?.captured_frame_corners?.length
+          ? `capturedCorners=${captureMetadata.captured_frame_corners.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).join(" ")}`
+          : "capturedCorners=none",
+        captureMetadata?.live_corners_ignored ? "liveCornersIgnored=yes" : "liveCornersIgnored=no",
         captureMetadata?.crop_fallback_reason ? `lastFallback=${captureMetadata.crop_fallback_reason}` : "lastFallback=none",
         `frame=${Math.round(guideRect.width)}x${Math.round(guideRect.height)}`,
         `frameLeft=${Math.round(guideRect.left)}`,

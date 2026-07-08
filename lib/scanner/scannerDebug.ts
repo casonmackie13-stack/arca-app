@@ -47,10 +47,13 @@ export function logCaptureMetadata(metadata: ScanMetadata) {
     crop_fallback_reason: metadata.crop_fallback_reason,
     edge_confidence: metadata.edgeConfidence,
     corners: metadata.corners,
+    captured_frame_corners: metadata.captured_frame_corners,
+    live_corners_ignored: metadata.live_corners_ignored,
     selected_burst_index: metadata.selected_burst_index,
     guide_rect_native: metadata.guide_rect_native,
     videoWidth: metadata.videoWidth,
     videoHeight: metadata.videoHeight,
+    quality: metadata.quality,
   });
   console.groupEnd();
 }

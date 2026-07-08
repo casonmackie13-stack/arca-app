@@ -9,6 +9,7 @@ import {
   type OpenCvMatVector,
 } from "@/lib/scanner/opencvLoader";
 import { isOpenCvScannerEnabled } from "@/lib/scanner/scannerFlags";
+import { AUTO_CAPTURE_STABLE_MS } from "@/lib/scanner/core/constants";
 import type { Point, ScanDetectionResult, ScanQualityMetrics } from "@/lib/scanner/scanMetadata";
 
 export type EnhancementLevel = "natural" | "strong";
@@ -205,7 +206,7 @@ export function getAutoCaptureBlockReason(
   }
   if (!detection?.found || !detection.corners?.length) return "no_edges";
   const minConfidence = options?.minConfidence ?? 0.62;
-  const minStableMs = options?.minStableMs ?? 800;
+  const minStableMs = options?.minStableMs ?? AUTO_CAPTURE_STABLE_MS;
   const quality = detection.quality;
   if (detection.confidence < minConfidence) return "low_confidence";
   if (stableMs < minStableMs) return "unstable";
