@@ -83,7 +83,7 @@ export default function ScannerDebugOverlay({
   return (
     <pre
       className="pointer-events-none absolute left-3 z-30 max-w-[min(92vw,20rem)] whitespace-pre-wrap rounded-lg border border-red-500/40 bg-black/80 p-3 text-[10px] leading-5 text-red-100 backdrop-blur"
-      style={{ top: "var(--scanner-top-reserved, 72px)" }}
+      style={{ top: "calc(env(safe-area-inset-top, 0px) + 7.5rem)" }}
     >
       {snapshot}
     </pre>

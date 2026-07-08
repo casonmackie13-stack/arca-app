@@ -2,18 +2,27 @@
 
 import type { RefObject } from "react";
 import ScanTypeToggle from "@/components/scanner/ScanTypeToggle";
+import type { ScanProgressStep } from "@/lib/scanner/scannerStatus";
 import type { ScanType } from "@/lib/scanner/scannerTypes";
 
-function sideLabel(side: "front" | "back") {
+const PROGRESS_STEPS: { id: ScanProgressStep; label: string }[] = [
+  { id: "front", label: "Scan Front" },
+  { id: "back", label: "Scan Back" },
+  { id: "review", label: "Review" },
+];
+
+function sideTitle(side: "front" | "back") {
   return side === "front" ? "Scan Front" : "Scan Back";
 }
 
-/** Top and bottom controls for the canonical Scanner.tsx shell. */
+/** Top and bottom controls — float over full-bleed camera preview. */
 export default function ScannerControls({
   activeSide,
   scanType,
-  phaseLabel,
-  backInstruction,
+  statusText,
+  progressStep,
+  autoCaptureEnabled,
+  autoCaptureProgress,
   capturing,
   cameraInitializing,
   captureError,
@@ -23,14 +32,17 @@ export default function ScannerControls({
   fileInputRef,
   onClose,
   onScanTypeChange,
+  onToggleAutoCapture,
   onCapture,
   onSkipBack,
   onLibraryPick,
 }: {
   activeSide: "front" | "back";
   scanType: ScanType;
-  phaseLabel: string;
-  backInstruction?: string;
+  statusText: string;
+  progressStep: ScanProgressStep;
+  autoCaptureEnabled: boolean;
+  autoCaptureProgress: number;
   capturing: boolean;
   cameraInitializing: boolean;
   captureError: string | null;
@@ -40,114 +52,154 @@ export default function ScannerControls({
   fileInputRef: RefObject<HTMLInputElement | null>;
   onClose: () => void;
   onScanTypeChange: (scanType: ScanType) => void;
+  onToggleAutoCapture: () => void;
   onCapture: () => void;
   onSkipBack?: () => void;
   onLibraryPick: (file: File | null) => void;
 }) {
+  const progressIndex = PROGRESS_STEPS.findIndex((step) => step.id === progressStep);
+
   return (
     <>
       <header
         ref={headerRef}
-        className="absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/80 to-transparent px-4 pb-3"
-        style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)" }}
+        className="pointer-events-none absolute inset-x-0 top-0 z-20"
+        style={{ paddingTop: "calc(env(safe-area-inset-top) + 8px)" }}
       >
-        <div className="flex items-start justify-between gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close scanner"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/50 text-xl font-light backdrop-blur"
-          >
-            ×
-          </button>
-          <div className="min-w-0 flex-1 pt-1 text-center">
-            <p className="text-sm font-semibold tracking-[-0.01em]">{sideLabel(activeSide)}</p>
-            {backInstruction && <p className="mt-1 text-xs text-white/75">{backInstruction}</p>}
-            <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--gold-primary)]">
-              {phaseLabel}
-            </p>
+        <div
+          className="pointer-events-none bg-gradient-to-b from-black/72 via-black/28 to-transparent px-4 pb-10"
+        >
+          <div className="pointer-events-auto flex items-start justify-between gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close scanner"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black/45 text-lg font-light text-white/95 backdrop-blur-md"
+            >
+              ×
+            </button>
+            <div className="min-w-0 flex-1 pt-0.5 text-center">
+              <p className="text-[15px] font-semibold tracking-[-0.02em] text-white">{sideTitle(activeSide)}</p>
+              <p className="mt-1 text-[13px] font-normal tracking-[-0.01em] text-white/72">
+                Center your card inside the frame.
+              </p>
+            </div>
+            <div className="h-10 w-10 shrink-0" aria-hidden />
           </div>
-          <div className="h-11 w-11 shrink-0" aria-hidden />
+
+          <div className="pointer-events-none mt-4 flex items-center justify-center gap-2 px-2">
+            {PROGRESS_STEPS.map((step, index) => {
+              const active = index === progressIndex;
+              const complete = index < progressIndex;
+              return (
+                <div key={step.id} className="scanner-progress-step flex items-center gap-2">
+                  <span
+                    className={`text-[11px] font-medium tracking-[-0.01em] ${
+                      active ? "text-[var(--gold-primary)]" : complete ? "text-white/72" : "text-white/38"
+                    }`}
+                  >
+                    {step.label}
+                  </span>
+                  {index < PROGRESS_STEPS.length - 1 && (
+                    <span className="text-[10px] text-white/24">→</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="pointer-events-none mt-3 flex justify-center px-4">
+            <div className="scanner-status-pill inline-flex min-h-8 max-w-[min(92vw,22rem)] items-center justify-center rounded-full border border-white/12 bg-black/48 px-4 py-1.5">
+              <p className="text-[12px] font-medium tracking-[-0.01em] text-white/92">{statusText}</p>
+            </div>
+          </div>
         </div>
       </header>
 
       {captureError && (
-        <div
-          className="absolute inset-x-4 z-20 rounded-xl border border-[var(--status-warning)] bg-black/85 p-3 text-sm leading-6 shadow-xl backdrop-blur"
-          style={{ top: "var(--scanner-top-reserved, calc(env(safe-area-inset-top) + 72px))" }}
-        >
-          <p>{captureError}</p>
+        <div className="pointer-events-none absolute inset-x-4 z-20" style={{ top: "calc(env(safe-area-inset-top) + 7.5rem)" }}>
+          <div className="pointer-events-auto rounded-xl border border-[var(--status-warning)]/80 bg-black/80 p-3 text-sm leading-6 text-white shadow-xl backdrop-blur-md">
+            <p>{captureError}</p>
+          </div>
         </div>
       )}
 
       <footer
         ref={footerRef}
-        className="absolute inset-x-0 bottom-0 z-20 border-t border-white/10 bg-black/85 backdrop-blur-md"
-        style={{
-          paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)",
-          paddingTop: "12px",
-          paddingLeft: "16px",
-          paddingRight: "16px",
-        }}
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-20"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 12px)" }}
       >
-        <div className="mb-3 flex justify-center">
-          <ScanTypeToggle
-            value={scanType}
-            onChange={onScanTypeChange}
-            disabled={capturing}
-          />
-        </div>
+        <div className="pointer-events-none bg-gradient-to-t from-black/78 via-black/34 to-transparent px-4 pb-2 pt-16">
+          <div className="pointer-events-auto mx-auto flex max-w-md flex-col items-center gap-3">
+            <ScanTypeToggle
+              value={scanType}
+              onChange={onScanTypeChange}
+              disabled={capturing}
+            />
 
-        <div className="mb-3 flex flex-wrap items-center justify-center gap-2">
-          <button
-            type="button"
-            disabled
-            title="Auto capture coming soon"
-            className="cursor-not-allowed rounded-full border border-white/10 bg-black/35 px-3 py-2 text-xs font-semibold text-white/40"
-          >
-            Auto Off
-          </button>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="rounded-full border border-white/20 bg-black/45 px-3 py-2 text-xs font-semibold text-white/85"
-          >
-            Library
-          </button>
-          {showSkipBack && (
+            <div className="flex w-full items-center justify-center gap-2.5">
+              <button
+                type="button"
+                onClick={onToggleAutoCapture}
+                aria-pressed={autoCaptureEnabled}
+                className={`min-w-[7.5rem] rounded-full border px-4 py-2 text-[12px] font-semibold tracking-[-0.01em] transition ${
+                  autoCaptureEnabled
+                    ? "border-[var(--gold-primary)]/60 bg-[var(--gold-primary)]/18 text-[var(--gold-primary)]"
+                    : "border-white/18 bg-black/42 text-white/78"
+                }`}
+              >
+                {autoCaptureEnabled ? "Auto Capture On" : "Auto Capture Off"}
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="rounded-full border border-white/18 bg-black/42 px-4 py-2 text-[12px] font-semibold tracking-[-0.01em] text-white/85"
+              >
+                Library
+              </button>
+              {showSkipBack && (
+                <button
+                  type="button"
+                  onClick={() => onSkipBack?.()}
+                  className="rounded-full border border-white/18 bg-black/42 px-4 py-2 text-[12px] font-semibold tracking-[-0.01em] text-white/85"
+                >
+                  Skip Back
+                </button>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  event.target.value = "";
+                  onLibraryPick(file);
+                }}
+              />
+            </div>
+
+            {autoCaptureEnabled && autoCaptureProgress > 0 && !capturing && (
+              <div className="h-1 w-32 overflow-hidden rounded-full bg-white/14">
+                <div
+                  className="h-full rounded-full bg-[var(--gold-primary)] transition-[width] duration-100 ease-linear"
+                  style={{ width: `${autoCaptureProgress}%` }}
+                />
+              </div>
+            )}
+
             <button
               type="button"
-              onClick={() => onSkipBack?.()}
-              className="rounded-full border border-white/20 bg-black/45 px-3 py-2 text-xs font-semibold text-white/85"
+              disabled={capturing || cameraInitializing}
+              onClick={onCapture}
+              className="scanner-shutter-ring relative flex h-[5.1rem] w-[5.1rem] items-center justify-center disabled:opacity-45"
+              aria-label="Capture image"
             >
-              Skip Back
+              <span className="relative flex h-[4.2rem] w-[4.2rem] items-center justify-center rounded-full border-[3px] border-white bg-white/12 shadow-[0_0_0_5px_rgba(255,255,255,.1)]">
+                <span className="h-[3rem] w-[3rem] rounded-full bg-white" />
+              </span>
             </button>
-          )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            className="hidden"
-            onChange={(event) => {
-              const file = event.target.files?.[0] ?? null;
-              event.target.value = "";
-              onLibraryPick(file);
-            }}
-          />
-        </div>
-
-        <div className="flex justify-center">
-          <button
-            type="button"
-            disabled={capturing || cameraInitializing}
-            onClick={onCapture}
-            className="relative flex h-[4.25rem] w-[4.25rem] items-center justify-center disabled:opacity-50"
-            aria-label="Capture image"
-          >
-            <span className="relative flex h-[3.5rem] w-[3.5rem] items-center justify-center rounded-full border-4 border-white bg-white/15 shadow-[0_0_0_6px_rgba(255,255,255,.12)]">
-              <span className="h-[2.5rem] w-[2.5rem] rounded-full bg-white" />
-            </span>
-          </button>
+          </div>
         </div>
       </footer>
     </>

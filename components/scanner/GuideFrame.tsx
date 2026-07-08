@@ -5,48 +5,49 @@ import { scanTypeConfig } from "@/components/scanner/scanTypes";
 import { scanFlowLog } from "@/lib/scanner/scanFlowLog";
 import type { ScanType } from "@/lib/scanner/scannerTypes";
 
-/** Canonical visible guide frame for Scanner.tsx. */
+export type GuideFrameVisualState = "searching" | "detected" | "locked";
+
+/** Canonical visible guide frame — positioned in video coordinate space via CSS vars. */
 export default function GuideFrame({
   scanType,
   guideFrameRef,
+  visualState,
 }: {
   scanType: ScanType;
   guideFrameRef: RefObject<HTMLDivElement | null>;
+  visualState: GuideFrameVisualState;
 }) {
   const config = scanTypeConfig[scanType];
+  const isGold = visualState === "detected" || visualState === "locked";
+  const borderColor = isGold ? "rgba(201, 164, 93, 0.88)" : "rgba(255, 255, 255, 0.62)";
 
   useEffect(() => {
     scanFlowLog("Guide frame mounted", { component: "GuideFrame", scanType, aspect: config.guideAspect });
   }, [config.guideAspect, scanType]);
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 z-[15]">
-      <div
-        className="absolute inset-x-0 flex items-center justify-center"
-        style={{
-          top: "var(--scanner-top-reserved, calc(env(safe-area-inset-top) + 72px))",
-          bottom: "var(--scanner-bottom-reserved, calc(env(safe-area-inset-bottom) + 220px))",
-          paddingLeft: "max(1rem, env(safe-area-inset-left))",
-          paddingRight: "max(1rem, env(safe-area-inset-right))",
-        }}
-      >
-        <div
-          ref={guideFrameRef}
-          data-arca-guide-frame
-          className="relative box-border rounded-[1.35rem] bg-transparent"
-          style={{
-            width: "var(--scanner-frame-width, min(72vw, 320px))",
-            height: "var(--scanner-frame-height, auto)",
-            minWidth: "200px",
-            minHeight: scanType === "graded" ? "320px" : "280px",
-            maxWidth: "calc(100% - 2rem)",
-            maxHeight: "100%",
-            aspectRatio: config.guideAspect,
-            border: "3px solid #C9A45D",
-            boxShadow: "0 0 0 9999px rgba(0,0,0,.42)",
-          }}
-        />
-      </div>
-    </div>
+    <div
+      ref={guideFrameRef}
+      data-arca-guide-frame
+      className={`scanner-guide-frame pointer-events-none absolute z-[15] box-border rounded-xl bg-transparent ${
+        visualState === "searching"
+          ? "scanner-guide-frame--searching"
+          : visualState === "locked"
+            ? "scanner-guide-frame--locked"
+            : "scanner-guide-frame--detected"
+      }`}
+      style={{
+        left: "var(--scanner-frame-left, 50%)",
+        top: "var(--scanner-frame-top, 50%)",
+        width: "var(--scanner-frame-width, 280px)",
+        height: "var(--scanner-frame-height, 392px)",
+        minWidth: "200px",
+        minHeight: scanType === "graded" ? "320px" : "280px",
+        border: `1.5px solid ${borderColor}`,
+        boxShadow: isGold
+          ? "0 0 0 9999px rgba(0,0,0,0.38), 0 0 0 1px rgba(201,164,93,0.18), 0 0 24px rgba(201,164,93,0.22)"
+          : "0 0 0 9999px rgba(0,0,0,0.38), 0 0 0 1px rgba(255,255,255,0.08)",
+      }}
+    />
   );
 }

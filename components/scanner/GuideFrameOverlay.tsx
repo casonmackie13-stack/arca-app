@@ -17,5 +17,5 @@ export default function GuideFrameOverlay({
     scanFlowLog("LEGACY_SCANNER_MOUNTED: GuideFrameOverlay");
   }, []);
 
-  return <GuideFrame scanType={scanType} guideFrameRef={overlayRef} />;
+  return <GuideFrame scanType={scanType} guideFrameRef={overlayRef} visualState="searching" />;
 }

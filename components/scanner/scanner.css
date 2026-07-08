@@ -1,0 +1,67 @@
+@keyframes scanner-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.72;
+  }
+  50% {
+    transform: scale(1.008);
+    opacity: 0.88;
+  }
+}
+
+@keyframes scanner-lock-pulse {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(0.985);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.scanner-guide-frame {
+  will-change: transform, border-color, opacity;
+  transition:
+    border-color 280ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    box-shadow 280ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    opacity 280ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.scanner-guide-frame--searching {
+  animation: scanner-breathe 2.8s ease-in-out infinite;
+}
+
+.scanner-guide-frame--detected {
+  animation: none;
+  opacity: 0.92;
+}
+
+.scanner-guide-frame--locked {
+  animation: scanner-lock-pulse 420ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  opacity: 1;
+}
+
+.scanner-shutter-ring {
+  transition: transform 160ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.scanner-shutter-ring:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.scanner-status-pill {
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.scanner-progress-step {
+  transition: color 200ms ease, opacity 200ms ease;
+}
+
+.scanner-edge-svg {
+  will-change: opacity;
+  transition: opacity 200ms ease;
+}

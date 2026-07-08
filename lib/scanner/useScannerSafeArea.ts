@@ -1,5 +1,6 @@
 "use client";
 
+/** @deprecated Legacy layout — use useScannerLayout for video-centered guide positioning. */
 import { useLayoutEffect, useRef, type RefObject } from "react";
 import { scanTypeConfig } from "@/components/scanner/scanTypes";
 import { computeGuideFrameSize } from "@/lib/scanner/cropMapping";
