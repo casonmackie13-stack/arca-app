@@ -19,15 +19,19 @@ async function waitForVideoElement(videoRef: RefObject<HTMLVideoElement | null>)
 export default function CameraView({
   active,
   videoRef,
+  fit = "cover",
   onStatusChange,
   onReady,
   onError,
+  onDimensions,
 }: {
   active: boolean;
   videoRef: RefObject<HTMLVideoElement | null>;
+  fit?: "cover" | "contain";
   onStatusChange?: (status: CameraStatus) => void;
   onReady: () => void;
   onError: (message: string) => void;
+  onDimensions?: (width: number, height: number) => void;
 }) {
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -91,6 +95,9 @@ export default function CameraView({
           videoWidth: video.videoWidth,
           videoHeight: video.videoHeight,
         });
+        if (video.videoWidth && video.videoHeight) {
+          onDimensions?.(video.videoWidth, video.videoHeight);
+        }
         onStatusChange?.("ready");
         onReady();
       } catch (cause) {
@@ -109,7 +116,7 @@ export default function CameraView({
       stopCameraStream(streamRef.current);
       streamRef.current = null;
     };
-  }, [active, onError, onReady, onStatusChange, videoRef]);
+  }, [active, onDimensions, onError, onReady, onStatusChange, videoRef]);
 
   return (
     <video
@@ -120,13 +127,13 @@ export default function CameraView({
       autoPlay
       playsInline
       muted
-      className="absolute inset-0 z-0 h-full w-full object-cover"
+      className="absolute inset-0 z-0 h-full w-full"
       style={{
         position: "absolute",
         inset: 0,
         width: "100%",
         height: "100%",
-        objectFit: "cover",
+        objectFit: fit,
         visibility: active ? "visible" : "hidden",
       }}
     />

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import CameraView from "@/components/scanner/CameraView";
+import CameraGuideOverlay from "@/components/scanner/CameraGuideOverlay";
 import CornerCropEditor from "@/components/scanner/CornerCropEditor";
 import ScannerPortal from "@/components/scanner/ScannerPortal";
 import ScanTypeToggle from "@/components/scanner/ScanTypeToggle";
@@ -79,6 +80,7 @@ export default function SimpleScanner({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [videoDims, setVideoDims] = useState<{ w: number; h: number } | null>(null);
 
   useBodyScrollLock(open);
 
@@ -125,6 +127,10 @@ export default function SimpleScanner({
 
   const handleCameraReady = useCallback(() => {
     if (mountedRef.current) setCameraStatus("ready");
+  }, []);
+
+  const handleCameraDimensions = useCallback((w: number, h: number) => {
+    if (mountedRef.current) setVideoDims({ w, h });
   }, []);
 
   const handleCameraError = useCallback((message: string) => {
@@ -266,10 +272,20 @@ export default function SimpleScanner({
           <CameraView
             active={cameraActive}
             videoRef={videoRef}
+            fit="contain"
             onStatusChange={handleCameraStatusChange}
             onReady={handleCameraReady}
             onError={handleCameraError}
+            onDimensions={handleCameraDimensions}
           />
+
+          {videoDims && cameraStatus === "ready" && (
+            <CameraGuideOverlay
+              videoWidth={videoDims.w}
+              videoHeight={videoDims.h}
+              aspectRatio={scanTypeConfig[scanType].aspectRatio}
+            />
+          )}
 
           <header
             className="pointer-events-none absolute inset-x-0 top-0 z-20"

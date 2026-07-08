@@ -22,15 +22,12 @@ function buildAdvancedConstraints(): VideoAdvanced[] {
   return advanced;
 }
 
-const CARD_ASPECT = 5 / 7;
-
 const CAMERA_ATTEMPTS: MediaStreamConstraints[] = [
   {
     video: {
       facingMode: { ideal: "environment" },
       width: { ideal: 1920 },
-      height: { ideal: 2560 },
-      aspectRatio: { ideal: CARD_ASPECT },
+      height: { ideal: 1080 },
       frameRate: { ideal: 30 },
       advanced: buildAdvancedConstraints(),
     } as MediaTrackConstraints,
@@ -86,17 +83,6 @@ export async function optimizeCameraTrack(stream: MediaStream) {
     } catch {
       // Browser may ignore unsupported advanced constraints.
     }
-  }
-
-  try {
-    await track.applyConstraints({
-      facingMode: "environment",
-      width: { ideal: 1920 },
-      height: { ideal: 2560 },
-      aspectRatio: { ideal: CARD_ASPECT },
-    });
-  } catch {
-    // Best-effort only.
   }
 }
 
