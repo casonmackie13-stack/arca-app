@@ -36,6 +36,7 @@ import { formatCardImage } from "@/lib/image-processing/cardFormatting";
 import { normalizeCardYear } from "@/lib/card-year";
 import { scanFlowLog } from "@/lib/scanner/scanFlowLog";
 import type { GuidedCaptureResult, ScannerSession, ScanType } from "@/lib/scanner/scannerTypes";
+import type { CaptureQualityRecord } from "@/lib/scanner/scannerTypes";
 
 const steps = ["Capture image", "Card details", "Condition", "Collection", "Value", "Review & save"] as const;
 
@@ -60,6 +61,8 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
   const [backAnalysis, setBackAnalysis] = useState<CardDetectionAnalysis | null>(null);
   const [frontProcessing, setFrontProcessing] = useState(false);
   const [backProcessing, setBackProcessing] = useState(false);
+  const [frontQuality, setFrontQuality] = useState<CaptureQualityRecord | null>(null);
+  const [backQuality, setBackQuality] = useState<CaptureQualityRecord | null>(null);
   const [scannerSession, setScannerSession] = useState<ScannerSession | null>(() => (
     scanAutostart
       ? { activeSide: "front", sequence: "front-back", resetKey: Date.now() }
@@ -132,7 +135,12 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
   }
 
   function advanceScannerAfterCapture(result: GuidedCaptureResult, side: "front" | "back") {
-    void chooseImage(side, result.file, { guidedScanType: result.scanType });
+    if (side === "front") setFrontQuality(result.qualityRecord ?? null);
+    else setBackQuality(result.qualityRecord ?? null);
+    void chooseImage(side, result.file, {
+      guidedScanType: result.scanType,
+      qualityRecord: result.qualityRecord,
+    });
     setScannerSession((current) => {
       if (!current) return null;
       if (side === "front" && current.sequence === "front-back") {
@@ -169,14 +177,20 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
     return "";
   }
 
-  const chooseImage = async (side: "front" | "back", file: File | null, options?: { guidedScanType?: ScanType }) => {
+  const chooseImage = async (
+    side: "front" | "back",
+    file: File | null,
+    options?: { guidedScanType?: ScanType; qualityRecord?: CaptureQualityRecord | null },
+  ) => {
     const requestId = ++imageProcessingId.current[side];
     const setFile = side === "front" ? setFrontFile : setBackFile;
     const setPreview = side === "front" ? setFrontPreview : setBackPreview;
     const setAnalysis = side === "front" ? setFrontAnalysis : setBackAnalysis;
     const setProcessing = side === "front" ? setFrontProcessing : setBackProcessing;
+    const setQuality = side === "front" ? setFrontQuality : setBackQuality;
     setFile(null);
     setAnalysis(null);
+    setQuality(options?.qualityRecord ?? null);
     setMessage("");
     setAutofillMessage("");
     setAutofillResult(null); setSales(null); setSalesError(""); setImageLookup(null); setSelectedDisplayImage(null); setEstimateSource("");
@@ -356,6 +370,10 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
         image_source: selectedDisplayImage?.source || "user_upload",
         image_source_url: selectedDisplayImage?.source_url || null,
         image_replacement_status: selectedDisplayImage ? "accepted_suggestion" : "original",
+        scan_quality_json: {
+          front: frontQuality,
+          back: backQuality,
+        },
       }).select("id").single();
       if (cardError || !card) {
         await Promise.all(uploadedPaths.map(removeUploadedObject));
@@ -452,7 +470,19 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
             onRemove={(side) => { void chooseImage(side, null); }}
           />
           {analysisNotice("Front image", frontAnalysis, frontProcessing)}
+          {frontQuality && (
+            <p className="mt-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text-secondary)]">
+              Capture quality: <span className="font-semibold capitalize text-[var(--text-primary)]">{frontQuality.overall_badge}</span>
+              {frontQuality.ai_quality_notes ? ` — ${frontQuality.ai_quality_notes}` : ""}
+            </p>
+          )}
           {backPreview && analysisNotice("Back image", backAnalysis, backProcessing)}
+          {backQuality && (
+            <p className="mt-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text-secondary)]">
+              Capture quality: <span className="font-semibold capitalize text-[var(--text-primary)]">{backQuality.overall_badge}</span>
+              {backQuality.ai_quality_notes ? ` — ${backQuality.ai_quality_notes}` : ""}
+            </p>
+          )}
         </Panel>}
 
         {currentStep === 1 && <><Panel variant="featured" className="space-y-4 p-5 md:p-6"><div><p className="eyebrow">Optional assistant</p><h3 className="heading-3 mt-2">Autofill card information</h3><p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">ARCA can inspect the front{backFile ? " and back" : ""} and suggest catalogue details. Nothing is locked—review and correct every field.</p></div><Button variant="outline" onClick={runAutofill} disabled={!frontFile || autofilling}>{autofilling ? "Scanning card…" : "Autofill Card Info"}</Button>{autofillMessage && <Message tone={autofillResult ? "success" : undefined}>{autofillMessage}</Message>}</Panel><CardFields value={form} onChange={setForm} disabled={saving} sections={["identity"]}/></>}

@@ -22,7 +22,6 @@ export function scannerReducer(state: ScannerState, event: ScannerEvent): Scanne
       return { ...state, scanType: event.scanType };
 
     case "TOGGLE_AUTO_CAPTURE":
-      // Reserved for future auto-capture; toggle state only.
       return { ...state, autoCaptureEnabled: !state.autoCaptureEnabled };
 
     case "CAPTURE_START":
@@ -37,6 +36,10 @@ export function scannerReducer(state: ScannerState, event: ScannerEvent): Scanne
         capturedOriginalFile: event.originalFile,
         previewUrl: event.previewUrl,
         captureMode: event.mode,
+        qualityRecord: event.qualityRecord ?? null,
+        captureMetadata: event.metadata ?? null,
+        aiQuality: null,
+        aiQualityLoading: false,
         error: null,
       };
 
@@ -57,8 +60,21 @@ export function scannerReducer(state: ScannerState, event: ScannerEvent): Scanne
         capturedFile: null,
         capturedOriginalFile: null,
         captureMode: null,
+        qualityRecord: null,
+        captureMetadata: null,
+        aiQuality: null,
+        aiQualityLoading: false,
         error: null,
       };
+
+    case "AI_QUALITY_START":
+      return { ...state, aiQualityLoading: true };
+
+    case "AI_QUALITY_SUCCESS":
+      return { ...state, aiQualityLoading: false, aiQuality: event.quality };
+
+    case "AI_QUALITY_FAILED":
+      return { ...state, aiQualityLoading: false };
 
     case "CLOSE":
       if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);

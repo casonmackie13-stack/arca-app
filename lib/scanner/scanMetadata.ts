@@ -53,11 +53,11 @@ export type ScanCaptureMetadata = ScanMetadata & {
   overlayCropSucceeded?: boolean;
 };
 
-export type GuidedCaptureResult = {
+/** @deprecated Use GuidedCaptureResult from scannerTypes.ts */
+export type LegacyGuidedCaptureResult = {
   file: File;
   scanType: ScanType;
   metadata: ScanMetadata;
-  /** Populated when preview-screen OCR finishes before Use */
   ocrText?: string;
 };
 
@@ -66,6 +66,7 @@ export type ScannerMessage =
   | "move-closer"
   | "hold-steady"
   | "too-blurry"
+  | "too-much-glare"
   | "more-light"
   | "ready"
   | "capturing";

@@ -9,11 +9,14 @@ export function scannerStatusDisplay(
 ): string {
   if (phase === "CAPTURING") return "Capturing…";
   if (phase === "INITIALIZING") return "Starting camera…";
-
   if (message === "capturing") return "Capturing…";
-  if (message === "ready" || message === "hold-steady") return "Hold still…";
+  if (message === "ready") return "Perfect — capturing";
+  if (message === "too-blurry") return "Image is blurry";
+  if (message === "too-much-glare") return "Too much glare";
+  if (message === "move-closer") return "Move closer";
+  if (message === "hold-steady") return "Hold still…";
+  if (message === "more-light") return "More light needed";
   if (detection?.found && detection.confidence >= 0.45) return "Card detected";
-
   return "Looking for card…";
 }
 
@@ -25,4 +28,16 @@ export function scanProgressStep(
 ): ScanProgressStep {
   if (mode === "preview") return "review";
   return activeSide;
+}
+
+export function qualityBadgeLabel(badge: "poor" | "good" | "excellent") {
+  if (badge === "excellent") return "Excellent";
+  if (badge === "good") return "Good";
+  return "Poor";
+}
+
+export function qualityRetryMessage(badge: "poor" | "good" | "excellent", aiAction?: string | null) {
+  if (badge === "excellent") return "";
+  if (aiAction) return aiAction;
+  return "This photo may be blurry or glared. Retake for better listing quality?";
 }

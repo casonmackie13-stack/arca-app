@@ -10,6 +10,11 @@ import ScannerPortal from "@/components/scanner/ScannerPortal";
 import ScannerPreview from "@/components/scanner/ScannerPreview";
 import "./scanner.css";
 import { processGuidedCapture } from "@/lib/scanner/captureProcessor";
+import {
+  aiQualityToBadge,
+  judgeImageQuality,
+  shouldRequestAiQuality,
+} from "@/lib/scanner/imageQualityJudge";
 import { resolveScannerMessage } from "@/lib/scanner/scannerMessages";
 import { scanFlowLog } from "@/lib/scanner/scanFlowLog";
 import { scannerReducer } from "@/lib/scanner/scannerReducer";
@@ -124,6 +129,7 @@ export default function Scanner({
         video: videoRef.current,
         overlayElement: guideFrameRef.current,
         scanType: state.scanType,
+        captureMode,
         onCropComputed: (crop, output) => {
           setLastCaptureCrop(`${Math.round(crop.sx)},${Math.round(crop.sy)},${Math.round(crop.sw)}x${Math.round(crop.sh)}`);
           setLastOutputSize(`${output.width}x${output.height}`);
@@ -136,6 +142,8 @@ export default function Scanner({
         originalFile: result.originalFile,
         previewUrl,
         mode: captureMode,
+        qualityRecord: result.qualityRecord,
+        metadata: result.metadata,
       });
     } catch (cause) {
       dispatch({
@@ -167,6 +175,24 @@ export default function Scanner({
     void runCapture("auto");
   }, [readyForAutoCapture, runCapture, state.autoCaptureEnabled, state.phase]);
 
+  useEffect(() => {
+    if (state.phase !== "PREVIEW" || !state.capturedFile || !state.qualityRecord) return;
+    if (!shouldRequestAiQuality(state.qualityRecord.overall_badge)) return;
+
+    let active = true;
+    dispatch({ type: "AI_QUALITY_START" });
+
+    void judgeImageQuality(state.capturedFile).then((quality) => {
+      if (!active) return;
+      if (quality) dispatch({ type: "AI_QUALITY_SUCCESS", quality });
+      else dispatch({ type: "AI_QUALITY_FAILED" });
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [state.capturedFile, state.phase, state.qualityRecord]);
+
   function closeScanner() {
     dispatch({ type: "CLOSE" });
     onClose();
@@ -182,10 +208,22 @@ export default function Scanner({
 
   function useCapture() {
     if (!state.capturedFile || !state.capturedOriginalFile) return;
+    const qualityRecord = state.qualityRecord
+      ? {
+        ...state.qualityRecord,
+        ai_quality_notes: state.aiQuality?.recommended_action ?? state.qualityRecord.ai_quality_notes ?? null,
+        overall_badge: state.aiQuality
+          ? aiQualityToBadge(state.aiQuality)
+          : state.qualityRecord.overall_badge,
+      }
+      : undefined;
     onUseCapture({
       file: state.capturedFile,
       originalFile: state.capturedOriginalFile,
       scanType: state.scanType,
+      qualityRecord,
+      metadata: state.captureMetadata ?? undefined,
+      aiQuality: state.aiQuality,
     }, activeSide);
   }
 
@@ -302,6 +340,16 @@ export default function Scanner({
           previewUrl={state.previewUrl}
           scanType={state.scanType}
           side={activeSide}
+          qualityBadge={state.aiQuality
+            ? aiQualityToBadge(state.aiQuality)
+            : state.qualityRecord?.overall_badge}
+          qualityLoading={state.aiQualityLoading}
+          retryMessage={
+            state.aiQuality?.recommended_action
+            ?? (state.qualityRecord && state.qualityRecord.overall_badge !== "excellent"
+              ? "This photo may be blurry or glared. Retake for better listing quality?"
+              : "")
+          }
           onRetake={retake}
           onUse={useCapture}
         />

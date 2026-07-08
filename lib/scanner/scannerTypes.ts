@@ -1,4 +1,4 @@
-/** ARCA scanner foundation — shared types for the event-driven capture flow. */
+import type { ScanMetadata, ScanQualityMetrics } from "@/lib/scanner/scanMetadata";
 
 export type ScanType = "raw" | "graded";
 
@@ -22,6 +22,10 @@ export type ScannerState = {
   capturedFile: File | null;
   capturedOriginalFile: File | null;
   captureMode: CaptureMode | null;
+  qualityRecord: CaptureQualityRecord | null;
+  captureMetadata: ScanMetadata | null;
+  aiQuality: AiImageQualityResult | null;
+  aiQualityLoading: boolean;
 };
 
 export type ScannerEvent =
@@ -31,9 +35,12 @@ export type ScannerEvent =
   | { type: "SET_SCAN_TYPE"; scanType: ScanType }
   | { type: "TOGGLE_AUTO_CAPTURE" }
   | { type: "CAPTURE_START"; mode: CaptureMode }
-  | { type: "CAPTURE_SUCCESS"; file: File; originalFile: File; previewUrl: string; mode: CaptureMode }
+  | { type: "CAPTURE_SUCCESS"; file: File; originalFile: File; previewUrl: string; mode: CaptureMode; qualityRecord?: CaptureQualityRecord; metadata?: ScanMetadata }
   | { type: "CAPTURE_FAILED"; message: string }
   | { type: "PREVIEW_RETAKE" }
+  | { type: "AI_QUALITY_START" }
+  | { type: "AI_QUALITY_SUCCESS"; quality: AiImageQualityResult }
+  | { type: "AI_QUALITY_FAILED" }
   | { type: "CLOSE" };
 
 export type ScanSequence = "front-back" | "front-only" | "back-only";
@@ -44,7 +51,26 @@ export type ScannerSession = {
   resetKey: number;
 };
 
-import type { ScanQualityMetrics } from "@/lib/scanner/scanMetadata";
+export type CaptureQualityRecord = {
+  blur_score: number;
+  glare_score: number;
+  edge_confidence: number;
+  lighting_score: number;
+  ai_quality_score?: number | null;
+  ai_quality_notes?: string | null;
+  overall_badge: "poor" | "good" | "excellent";
+};
+
+export type AiImageQualityResult = {
+  blurry: boolean;
+  glare: boolean;
+  too_dark: boolean;
+  cropped_edges: boolean;
+  skewed: boolean;
+  text_readable: boolean;
+  overall_quality: "poor" | "acceptable" | "excellent";
+  recommended_action: string;
+};
 
 export type GuidedCaptureResult = {
   /** Enhanced display image used for preview and Add Card upload. */
@@ -53,6 +79,9 @@ export type GuidedCaptureResult = {
   originalFile: File;
   scanType: ScanType;
   quality?: ScanQualityMetrics;
+  metadata?: ScanMetadata;
+  qualityRecord?: CaptureQualityRecord;
+  aiQuality?: AiImageQualityResult | null;
 };
 
 export const initialScannerState: ScannerState = {
@@ -64,6 +93,10 @@ export const initialScannerState: ScannerState = {
   capturedFile: null,
   capturedOriginalFile: null,
   captureMode: null,
+  qualityRecord: null,
+  captureMetadata: null,
+  aiQuality: null,
+  aiQualityLoading: false,
 };
 
 export function isCameraPhase(phase: ScannerPhase) {

@@ -22,7 +22,20 @@ function buildAdvancedConstraints(): VideoAdvanced[] {
   return advanced;
 }
 
+const CARD_ASPECT = 5 / 7;
+
 const CAMERA_ATTEMPTS: MediaStreamConstraints[] = [
+  {
+    video: {
+      facingMode: { ideal: "environment" },
+      width: { ideal: 1920 },
+      height: { ideal: 2560 },
+      aspectRatio: { ideal: CARD_ASPECT },
+      frameRate: { ideal: 30 },
+      advanced: buildAdvancedConstraints(),
+    } as MediaTrackConstraints,
+    audio: false,
+  },
   {
     video: {
       facingMode: { ideal: "environment" },
@@ -79,7 +92,8 @@ export async function optimizeCameraTrack(stream: MediaStream) {
     await track.applyConstraints({
       facingMode: "environment",
       width: { ideal: 1920 },
-      height: { ideal: 1080 },
+      height: { ideal: 2560 },
+      aspectRatio: { ideal: CARD_ASPECT },
     });
   } catch {
     // Best-effort only.

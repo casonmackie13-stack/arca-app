@@ -1,12 +1,13 @@
 import type { CardEdgeDetection, ScannerMessage } from "@/lib/scanner/scanMetadata";
 
 const LABELS: Record<ScannerMessage, string> = {
-  "find-edges": "Find card edges",
+  "find-edges": "Looking for card…",
   "move-closer": "Move closer",
   "hold-steady": "Hold steady",
-  "too-blurry": "Too blurry",
+  "too-blurry": "Image is blurry",
+  "too-much-glare": "Too much glare",
   "more-light": "More light needed",
-  ready: "Ready",
+  ready: "Perfect — capturing",
   capturing: "Capturing…",
 };
 
@@ -24,6 +25,7 @@ export function resolveScannerMessage(
 
   const quality = detection.quality;
   if (quality.blurScore < 0.28) return "too-blurry";
+  if ((quality.glareScore ?? 0) > 0.22) return "too-much-glare";
   if (quality.brightnessScore < 0.18) return "more-light";
   if ((quality.fillRatio ?? 0) < 0.1) return "move-closer";
 
