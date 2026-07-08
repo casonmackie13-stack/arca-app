@@ -1,8 +1,8 @@
 /**
  * ARCA scanner foundation — public API for the Add Card capture flow.
  *
- * Active Add path: Navigation → /cards/new?scan=1 → AddCardClient → GuidedCardScanner → processGuidedCapture.
- * Unused in Add flow: cardVision.ts, BoundaryOverlay, LiveEdgeOverlay, useLiveDetection, app/scan/page.tsx.
+ * Canonical Add path: Navigation → /cards/new?scan=1 → AddCardClient → Scanner → processGuidedCapture.
+ * Legacy (unused in Add flow): GuidedCardScanner, BoundaryOverlay, LiveEdgeOverlay, cardVision.ts, app/scan/page.tsx.
  */
 
 export { processGuidedCapture } from "@/lib/scanner/captureProcessor";

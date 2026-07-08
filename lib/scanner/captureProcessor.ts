@@ -54,12 +54,13 @@ export async function processGuidedCapture(options: {
   video: HTMLVideoElement;
   overlayElement: HTMLElement | null;
   scanType: ScanType;
+  onCropComputed?: (crop: { sx: number; sy: number; sw: number; sh: number }, output: { width: number; height: number }) => void;
 }): Promise<GuidedCaptureResult> {
-  const { video, overlayElement, scanType } = options;
+  const { video, overlayElement, scanType, onCropComputed } = options;
   const config = scanTypeConfig[scanType];
   const output = config.output;
 
-  scanFlowLog(`Capture called: ${ACTIVE_CAPTURE_FUNCTION}`);
+  scanFlowLog("Capture called");
 
   if (!overlayElement) {
     scanFlowLog("Crop mode: unknown (missing guide frame ref)");
@@ -71,16 +72,17 @@ export async function processGuidedCapture(options: {
     throw new Error("Camera is still loading. Try again.");
   }
 
+  scanFlowLog("Video size", {
+    videoWidth: video.videoWidth,
+    videoHeight: video.videoHeight,
+    displayWidth: Math.round(video.getBoundingClientRect().width),
+    displayHeight: Math.round(video.getBoundingClientRect().height),
+  });
+
   const guideFrameRect = domRectLike(overlayElement.getBoundingClientRect());
   const videoDisplayRect = domRectLike(video.getBoundingClientRect());
 
-  scanFlowLog("Capture rects", {
-    guideFrameRect,
-    videoDisplayRect,
-    videoWidth: video.videoWidth,
-    videoHeight: video.videoHeight,
-    guideFrameZero: guideFrameRect.width === 0 || guideFrameRect.height === 0,
-  });
+  scanFlowLog("Guide rect", guideFrameRect);
 
   if (guideFrameRect.width === 0 || guideFrameRect.height === 0) {
     scanFlowLog("Crop mode: unknown (guide frame has zero size)");
@@ -106,11 +108,10 @@ export async function processGuidedCapture(options: {
     video.videoHeight,
   );
 
-  scanFlowLog("Crop mode: guide-frame", {
-    sourceCrop: crop,
-    outputWidth: output.width,
-    outputHeight: output.height,
-  });
+  scanFlowLog("Source crop", crop);
+  scanFlowLog("Crop mode: guide-frame");
+
+  onCropComputed?.(crop, output);
 
   reportCaptureDebug(video, overlayElement.getBoundingClientRect(), crop, scanType);
 
@@ -119,7 +120,7 @@ export async function processGuidedCapture(options: {
   const enhancedCanvas = await enhanceListingCanvasAsync(originalSnapshot);
   const quality = assessCaptureQuality(enhancedCanvas);
 
-  scanFlowLog("Capture output dimensions", {
+  scanFlowLog("Output size", {
     original: `${originalCanvas.width}x${originalCanvas.height}`,
     enhanced: `${enhancedCanvas.width}x${enhancedCanvas.height}`,
   });

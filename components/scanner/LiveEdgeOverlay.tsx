@@ -1,11 +1,13 @@
 "use client";
 
-import type { RefObject } from "react";
-import type { ScanType } from "@/components/scanner/scanTypes";
+import { useEffect, type RefObject } from "react";
+import type { ScanType } from "@/lib/scanner/scannerTypes";
 import { scanTypeConfig } from "@/components/scanner/scanTypes";
 import { scannerMessageLabel } from "@/lib/scanner/scannerMessages";
+import { scanFlowLog } from "@/lib/scanner/scanFlowLog";
 import type { ScanPoint, ScannerMessage } from "@/lib/scanner/scanMetadata";
 
+/** LEGACY SCANNER PATH — do not use for Add button flow. Live OpenCV edge overlay prototype. */
 export default function LiveEdgeOverlay({
   type,
   overlayRef,
@@ -21,6 +23,10 @@ export default function LiveEdgeOverlay({
   autoCaptureEnabled: boolean;
   stableMs: number;
 }) {
+  useEffect(() => {
+    scanFlowLog("LEGACY_SCANNER_MOUNTED: LiveEdgeOverlay");
+  }, []);
+
   const config = scanTypeConfig[type];
   const aspect = `${config.output.width} / ${config.output.height}`;
   const widthFromHeight = `${Math.round((config.output.width / config.output.height) * 68)}vh`;

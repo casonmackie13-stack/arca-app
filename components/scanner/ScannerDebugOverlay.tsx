@@ -12,12 +12,18 @@ export default function ScannerDebugOverlay({
   videoRef,
   guideFrameRef,
   scanType,
+  activeSide,
   active,
+  lastCaptureCrop,
+  lastOutputSize,
 }: {
   videoRef: RefObject<HTMLVideoElement | null>;
   guideFrameRef: RefObject<HTMLDivElement | null>;
   scanType: ScanType;
+  activeSide: "front" | "back";
   active: boolean;
+  lastCaptureCrop?: string | null;
+  lastOutputSize?: string | null;
 }) {
   const [snapshot, setSnapshot] = useState("");
 
@@ -44,18 +50,22 @@ export default function ScannerDebugOverlay({
       const videoRect = video.getBoundingClientRect();
 
       setSnapshot([
+        "scanner=canonical",
+        `side=${activeSide}`,
         `captureFn=${ACTIVE_CAPTURE_FUNCTION}`,
         `scan=${scanType}`,
         `frame=${Math.round(guideRect.width)}x${Math.round(guideRect.height)}`,
         `frameLeft=${Math.round(guideRect.left)}`,
         `frameTop=${Math.round(guideRect.top)}`,
-        `video=${video.videoWidth}x${video.videoHeight}`,
-        `display=${Math.round(videoRect.width)}x${Math.round(videoRect.height)}`,
+        `videoSrc=${video.videoWidth}x${video.videoHeight}`,
+        `videoCss=${Math.round(videoRect.width)}x${Math.round(videoRect.height)}`,
         `target=${config.guideAspect}`,
         `out=${config.output.width}x${config.output.height}`,
         crop
-          ? `crop=${Math.round(crop.sx)},${Math.round(crop.sy)},${Math.round(crop.sw)}x${Math.round(crop.sh)}`
-          : "crop=unavailable",
+          ? `liveCrop=${Math.round(crop.sx)},${Math.round(crop.sy)},${Math.round(crop.sw)}x${Math.round(crop.sh)}`
+          : "liveCrop=unavailable",
+        lastCaptureCrop ? `lastCrop=${lastCaptureCrop}` : "lastCrop=none",
+        lastOutputSize ? `lastOut=${lastOutputSize}` : "lastOut=none",
       ].join("\n"));
     }
 
@@ -66,12 +76,15 @@ export default function ScannerDebugOverlay({
       window.clearInterval(timer);
       window.removeEventListener("resize", update);
     };
-  }, [active, guideFrameRef, scanType, videoRef]);
+  }, [active, activeSide, guideFrameRef, lastCaptureCrop, lastOutputSize, scanType, videoRef]);
 
   if (!active || !isScannerDebugEnabled() || !snapshot) return null;
 
   return (
-    <pre className="pointer-events-none absolute left-3 z-30 max-w-[min(92vw,20rem)] whitespace-pre-wrap rounded-lg border border-red-500/40 bg-black/80 p-3 text-[10px] leading-5 text-red-100 backdrop-blur" style={{ top: "var(--scanner-top-reserved, 72px)" }}>
+    <pre
+      className="pointer-events-none absolute left-3 z-30 max-w-[min(92vw,20rem)] whitespace-pre-wrap rounded-lg border border-red-500/40 bg-black/80 p-3 text-[10px] leading-5 text-red-100 backdrop-blur"
+      style={{ top: "var(--scanner-top-reserved, 72px)" }}
+    >
       {snapshot}
     </pre>
   );

@@ -1,6 +1,9 @@
 "use client";
 
-/** Active scanner for bottom-nav Add and Add Card step 0 — portaled via ScannerPortal. */
+/**
+ * LEGACY SCANNER PATH — do not use for Add button flow.
+ * Use @/components/scanner/Scanner instead.
+ */
 import { useEffect, useReducer, useRef, type CSSProperties } from "react";
 import GuideFrameOverlay from "@/components/scanner/GuideFrameOverlay";
 import ScanPreview from "@/components/scanner/ScanPreview";
@@ -78,7 +81,7 @@ export default function GuidedCardScanner({
 
   useEffect(() => {
     if (!open) return;
-    scanFlowLog("Scanner mounted: GuidedCardScanner");
+    scanFlowLog("LEGACY_SCANNER_MOUNTED: GuidedCardScanner");
     dispatch({ type: "OPEN" });
   }, [open, activeSide, resetKey]);
 
@@ -130,7 +133,6 @@ export default function GuidedCardScanner({
 
   async function runCapture(mode: CaptureMode) {
     if (!videoRef.current || state.phase === "CAPTURING") return;
-    scanFlowLog("Capture called: runCapture", { mode, scanType: state.scanType, hasGuideRef: Boolean(overlayRef.current) });
     dispatch({ type: "CAPTURE_START", mode });
     try {
       const result = await processGuidedCapture({
@@ -185,157 +187,40 @@ export default function GuidedCardScanner({
         <h2 className="mt-4 text-2xl font-semibold">Camera unavailable</h2>
         <p className="mt-3 max-w-sm text-sm leading-6 text-white/70">{state.error}</p>
         <div className="mt-8 flex w-full max-w-xs flex-col gap-3">
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="rounded-full bg-[var(--gold-primary)] px-5 py-3 text-sm font-semibold text-black"
-          >
-            Choose from Library
-          </button>
-          <button
-            type="button"
-            onClick={closeScanner}
-            className="rounded-full border border-white/25 px-5 py-3 text-sm font-semibold text-white"
-          >
-            Close
-          </button>
+          <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded-full bg-[var(--gold-primary)] px-5 py-3 text-sm font-semibold text-black">Choose from Library</button>
+          <button type="button" onClick={closeScanner} className="rounded-full border border-white/25 px-5 py-3 text-sm font-semibold text-white">Close</button>
         </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0] ?? null;
-            event.target.value = "";
-            onFileFallback(file, activeSide);
-          }}
-        />
+        <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => { const file = event.target.files?.[0] ?? null; event.target.value = ""; onFileFallback(file, activeSide); }} />
       </div>
     )}
 
     {showCamera && <>
-      <video
-        ref={(node) => {
-          videoRef.current = node;
-          if (node) scanFlowLog("Video mounted");
-        }}
-        autoPlay
-        playsInline
-        muted
-        className="absolute inset-0 z-0 h-full w-full object-cover"
-        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
-      />
-      <GuideFrameOverlay
-        scanType={state.scanType}
-        overlayRef={overlayRef}
-      />
-      <ScannerDebugOverlay
-        videoRef={videoRef}
-        guideFrameRef={overlayRef}
-        scanType={state.scanType}
-        active={showCamera}
-      />
-
-      <header
-        ref={headerRef}
-        className="absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/80 to-transparent px-4 pb-3"
-        style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)" }}
-      >
+      <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 z-0 h-full w-full object-cover" />
+      <GuideFrameOverlay scanType={state.scanType} overlayRef={overlayRef} />
+      <ScannerDebugOverlay videoRef={videoRef} guideFrameRef={overlayRef} scanType={state.scanType} activeSide={activeSide} active={showCamera} />
+      <header ref={headerRef} className="absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/80 to-transparent px-4 pb-3" style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)" }}>
         <div className="flex items-start justify-between gap-3">
           <button type="button" onClick={closeScanner} aria-label="Close scanner" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/50 text-xl font-light backdrop-blur">×</button>
           <div className="min-w-0 flex-1 pt-1 text-center">
             <p className="text-sm font-semibold tracking-[-0.01em]">{sideLabel(activeSide)}</p>
             {backInstruction && <p className="mt-1 text-xs text-white/75">{backInstruction}</p>}
-            <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--gold-primary)]">
-              {scannerPhaseLabel(state.phase)}
-            </p>
+            <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--gold-primary)]">{scannerPhaseLabel(state.phase)}</p>
           </div>
           <div className="h-11 w-11 shrink-0" aria-hidden />
         </div>
       </header>
-
-      {state.error && state.phase !== "ERROR" && (
-        <div className="absolute inset-x-4 z-20 rounded-xl border border-[var(--status-warning)] bg-black/85 p-3 text-sm leading-6 shadow-xl backdrop-blur" style={{ top: "var(--scanner-top-reserved)" }}>
-          <p>{state.error}</p>
-        </div>
-      )}
-
-      <footer
-        ref={footerRef}
-        className="absolute inset-x-0 bottom-0 z-20 border-t border-white/10 bg-black/85 backdrop-blur-md"
-        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)", paddingTop: "12px", paddingLeft: "16px", paddingRight: "16px" }}
-      >
-        <div className="mb-3 flex justify-center">
-          <ScanTypeToggle
-            value={state.scanType}
-            onChange={(scanType) => dispatch({ type: "SET_SCAN_TYPE", scanType })}
-            disabled={state.phase === "CAPTURING"}
-          />
-        </div>
-
-        <div className="mb-3 flex flex-wrap items-center justify-center gap-2">
-          <button
-            type="button"
-            disabled
-            title="Auto capture coming soon"
-            className="cursor-not-allowed rounded-full border border-white/10 bg-black/35 px-3 py-2 text-xs font-semibold text-white/40"
-          >
-            Auto Off
-          </button>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="rounded-full border border-white/20 bg-black/45 px-3 py-2 text-xs font-semibold text-white/85"
-          >
-            Library
-          </button>
-          {showSkipBack && (
-            <button
-              type="button"
-              onClick={() => onSkipBack?.()}
-              className="rounded-full border border-white/20 bg-black/45 px-3 py-2 text-xs font-semibold text-white/85"
-            >
-              Skip Back
-            </button>
-          )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            className="hidden"
-            onChange={(event) => {
-              const file = event.target.files?.[0] ?? null;
-              event.target.value = "";
-              onFileFallback(file, activeSide);
-            }}
-          />
-        </div>
-
+      <footer ref={footerRef} className="absolute inset-x-0 bottom-0 z-20 border-t border-white/10 bg-black/85 backdrop-blur-md" style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)", paddingTop: "12px", paddingLeft: "16px", paddingRight: "16px" }}>
+        <div className="mb-3 flex justify-center"><ScanTypeToggle value={state.scanType} onChange={(scanType) => dispatch({ type: "SET_SCAN_TYPE", scanType })} disabled={state.phase === "CAPTURING"} /></div>
         <div className="flex justify-center">
-          <button
-            type="button"
-            disabled={state.phase === "CAPTURING" || state.phase === "INITIALIZING"}
-            onClick={() => void runCapture("manual")}
-            className="relative flex h-[4.25rem] w-[4.25rem] items-center justify-center disabled:opacity-50"
-            aria-label="Capture image"
-          >
-            <span className="relative flex h-[3.5rem] w-[3.5rem] items-center justify-center rounded-full border-4 border-white bg-white/15 shadow-[0_0_0_6px_rgba(255,255,255,.12)]">
-              <span className="h-[2.5rem] w-[2.5rem] rounded-full bg-white" />
-            </span>
+          <button type="button" disabled={state.phase === "CAPTURING" || state.phase === "INITIALIZING"} onClick={() => void runCapture("manual")} className="relative flex h-[4.25rem] w-[4.25rem] items-center justify-center disabled:opacity-50" aria-label="Capture image">
+            <span className="relative flex h-[3.5rem] w-[3.5rem] items-center justify-center rounded-full border-4 border-white bg-white/15"><span className="h-[2.5rem] w-[2.5rem] rounded-full bg-white" /></span>
           </button>
         </div>
       </footer>
     </>}
 
     {state.phase === "PREVIEW" && state.previewUrl && (
-      <ScanPreview
-        previewUrl={state.previewUrl}
-        scanType={state.scanType}
-        side={activeSide}
-        onRetake={retake}
-        onUse={useCapture}
-      />
+      <ScanPreview previewUrl={state.previewUrl} scanType={state.scanType} side={activeSide} onRetake={retake} onUse={useCapture} />
     )}
   </div>;
 

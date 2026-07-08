@@ -8,7 +8,7 @@ import type { ScanSequence } from "@/lib/scanner/scannerTypes";
 type CaptureSide = "front" | "back";
 
 /**
- * Secondary Add Card entry (step 0 panel) — calls startScanner() which opens GuidedCardScanner.
+ * Secondary Add Card entry (step 0 panel) — calls startScanner() which opens canonical Scanner.tsx.
  * Not a separate capture pipeline.
  */
 export default function CardCapturePanel({

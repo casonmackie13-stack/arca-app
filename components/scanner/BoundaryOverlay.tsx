@@ -1,10 +1,15 @@
 "use client";
 
-import type { RefObject } from "react";
-import type { ScanType } from "@/components/scanner/scanTypes";
+import { useEffect, type RefObject } from "react";
+import type { ScanType } from "@/lib/scanner/scannerTypes";
 import { scanTypeConfig } from "@/components/scanner/scanTypes";
+import { scanFlowLog } from "@/lib/scanner/scanFlowLog";
 
+/** LEGACY SCANNER PATH — do not use for Add button flow. OpenCV edge overlay prototype. */
 export default function BoundaryOverlay({ type, overlayRef }: { type: ScanType; overlayRef: RefObject<HTMLDivElement | null> }) {
+  useEffect(() => {
+    scanFlowLog("LEGACY_SCANNER_MOUNTED: BoundaryOverlay");
+  }, []);
   const config = scanTypeConfig[type];
   const aspect = `${config.output.width} / ${config.output.height}`;
   const widthFromHeight = `${Math.round((config.output.width / config.output.height) * 68)}vh`;

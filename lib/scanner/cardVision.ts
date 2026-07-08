@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * ARCA Scan Engine v1 — card/slab vision pipeline (OpenCV.js when available).
- * Optimized for sports cards, slabs, glare, and listing-ready output.
+ * LEGACY SCANNER PATH — do not use for Add button flow.
+ * OpenCV card/slab vision pipeline prototype (cardVision.ts).
  */
 import type { ScanType } from "@/components/scanner/scanTypes";
 import { scanTypeConfig } from "@/components/scanner/scanTypes";
