@@ -7,6 +7,7 @@ import CardFields from "@/components/card/CardFields";
 import FlippableCard from "@/components/card/FlippableCard";
 import DisplayImagePanel from "@/components/card/DisplayImagePanel";
 import RecentSalesPanel from "@/components/card/RecentSalesPanel";
+import PriceEstimatePanel from "@/components/card/PriceEstimatePanel";
 import CollectionSelector from "@/components/collection/CollectionSelector";
 import QuickCollectionDialog from "@/components/collection/QuickCollectionDialog";
 import ScannerWithBoundary from "@/components/scanner/ScannerWithBoundary";
@@ -14,7 +15,8 @@ import CardCapturePanel from "@/components/scanner/CardCapturePanel";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Message, Panel } from "@/components/ui/Surface";
-import { archiveOriginalImage, autofillCardInfo, fetchRecentSales, lookupDisplayImage } from "@/lib/card-autofill";
+import { archiveOriginalImage, autofillCardInfo, estimateCardPrice, fetchRecentSales, lookupDisplayImage } from "@/lib/card-autofill";
+import type { PriceEstimateResponse, PricingCardInput } from "@/lib/pricing/types";
 import {
   cardMutation,
   emptyCardForm,
@@ -29,8 +31,8 @@ import { ensureUnsortedCollection, loadOwnedCollections } from "@/lib/collection
 import { createMobileSafeId } from "@/lib/mobile-id";
 import { supabase } from "@/lib/supabase";
 import type { CollectionSummary } from "@/lib/types";
-import type { CardAutofillResponse, CardImageLookupResponse, CardSalesResponse, ImageSuggestion } from "@/lib/card-intelligence";
-import { salePrice } from "@/lib/card-sales";
+import type { AutofillCard, CardAutofillResponse, CardImageLookupResponse, CardSalesResponse, ImageSuggestion } from "@/lib/card-intelligence";
+import type { CardFormValue } from "@/lib/card-form";
 import { analyzeCardImage, type CardDetectionAnalysis } from "@/lib/image-processing/cardDetection";
 import { formatCardImage } from "@/lib/image-processing/cardFormatting";
 import { normalizeCardYear } from "@/lib/card-year";
@@ -40,12 +42,54 @@ import type { CaptureQualityRecord } from "@/lib/scanner/scannerTypes";
 
 const steps = ["Capture image", "Card details", "Condition", "Collection", "Value", "Review & save"] as const;
 
+function isGradedGrader(grader: string): boolean {
+  const value = grader.trim();
+  return Boolean(value) && value.toLowerCase() !== "raw";
+}
+
+function aiToPricingCard(ai: AutofillCard): PricingCardInput {
+  const graded = isGradedGrader(ai.grade_company);
+  return {
+    player_name: ai.player_name.trim(),
+    sport: ai.sport,
+    year: ai.year ? normalizeCardYear(ai.year) : "",
+    brand: ai.brand.trim(),
+    set_name: ai.set_name.trim(),
+    card_number: ai.card_number.trim(),
+    parallel: ai.parallel.trim(),
+    rookie_card: ai.rookie_card === true,
+    serial_number: ai.serial_number.trim(),
+    grading_company: graded ? ai.grade_company.trim() : "",
+    grade: graded ? ai.grade.trim() : "",
+    is_graded: graded,
+  };
+}
+
+function formToPricingCard(form: CardFormValue): PricingCardInput {
+  const graded = isGradedGrader(form.grader);
+  return {
+    player_name: form.playerName.trim(),
+    sport: form.sport,
+    year: form.year ? normalizeCardYear(form.year) : "",
+    brand: form.brand.trim(),
+    set_name: form.setName.trim(),
+    card_number: form.cardNumber.trim(),
+    parallel: form.parallel.trim(),
+    rookie_card: form.rookieCard === "yes",
+    serial_number: form.serialNumber.trim(),
+    grading_company: graded ? form.grader.trim() : "",
+    grade: graded ? form.grade.trim() : "",
+    is_graded: graded,
+  };
+}
+
 export default function AddCardClient({ initialCollectionId }: { initialCollectionId?: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const scanAutostart = searchParams.get("scan") === "1";
   const stepHeadingRef = useRef<HTMLHeadingElement>(null);
   const imageProcessingId = useRef({ front: 0, back: 0 });
+  const lastAutoAppliedValueRef = useRef("");
   const [currentStep, setCurrentStep] = useState(0);
   const [form, setForm] = useState(() => ({ ...emptyCardForm }));
   const [collections, setCollections] = useState<CollectionSummary[]>([]);
@@ -78,6 +122,9 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
   const [imageLookup, setImageLookup] = useState<CardImageLookupResponse | null>(null);
   const [selectedDisplayImage, setSelectedDisplayImage] = useState<ImageSuggestion | null>(null);
   const [estimateSource, setEstimateSource] = useState("");
+  const [priceEstimate, setPriceEstimate] = useState<PriceEstimateResponse | null>(null);
+  const [priceLoading, setPriceLoading] = useState(false);
+  const [priceError, setPriceError] = useState("");
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -293,19 +340,50 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
       const [salesResult, imageResult] = await Promise.allSettled([fetchRecentSales(ai as unknown as Record<string, unknown>, result.sales_query), lookupDisplayImage(ai as unknown as Record<string, unknown>)]);
       if (salesResult.status === "fulfilled") {
         setSales(salesResult.value);
-        const closest = salesResult.value.closest_sale;
-        const closestPrice = closest ? salePrice(closest) : null;
-        if (closest && closestPrice !== null) {
-          setForm((current) => current.estimatedValue ? current : { ...current, estimatedValue: String(closestPrice) });
-          setEstimateSource(`Estimated from closest recent sale: ${closest.source} ${closest.sale_type.replaceAll("_", " ")} · ${[closest.grade_company, closest.grade].filter(Boolean).join(" ") || "Raw"} · sold ${closest.sale_date}`);
-        } else setEstimateSource("");
       } else setSalesError(salesResult.reason instanceof Error ? salesResult.reason.message : "Recent sales are unavailable.");
       if (imageResult.status === "fulfilled") setImageLookup(imageResult.value);
       setSalesLoading(false);
+      // Additive, post-autofill pricing pipeline — never blocks autofill.
+      void runPriceEstimate(aiToPricingCard(ai));
     } catch (cause) {
       setAutofillMessage(cause instanceof Error ? cause.message : "Couldn’t autofill this card. Enter details manually.");
     } finally {
       setAutofilling(false);
+    }
+  }
+
+  function applyFairEstimate(mid: number, confidence: string, force = false) {
+    const next = String(Math.round(mid));
+    setForm((current) => {
+      if (force) return { ...current, estimatedValue: next };
+      const currentNorm = current.estimatedValue.replace(/[$,]/g, "").trim();
+      const lastApplied = lastAutoAppliedValueRef.current;
+      const userEditedAway = Boolean(currentNorm && lastApplied && currentNorm !== lastApplied);
+      const unsetBeforeFirstApply = !currentNorm && !lastApplied;
+      const refreshStillOnAutoValue = Boolean(lastApplied && currentNorm === lastApplied);
+      if (!unsetBeforeFirstApply && !refreshStillOnAutoValue && userEditedAway) return current;
+      // Don't overwrite a value the user entered before any auto-apply ran.
+      if (!lastApplied && currentNorm && currentNorm !== next) return current;
+      return { ...current, estimatedValue: next };
+    });
+    lastAutoAppliedValueRef.current = next;
+    setEstimateSource(`Default value from AI fair estimate (${confidence} confidence). You can edit this before saving.`);
+  }
+
+  async function runPriceEstimate(card: PricingCardInput) {
+    if (!card.player_name) { setPriceError("Add a player or subject name to estimate pricing."); return; }
+    setPriceLoading(true);
+    setPriceError("");
+    try {
+      const result = await estimateCardPrice(card);
+      setPriceEstimate(result);
+      if (result.estimated_value_mid != null) {
+        applyFairEstimate(result.estimated_value_mid, result.confidence);
+      }
+    } catch (cause) {
+      setPriceError(cause instanceof Error ? cause.message : "Price estimate is unavailable.");
+    } finally {
+      setPriceLoading(false);
     }
   }
 
@@ -391,6 +469,15 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
         await Promise.all(uploadedPaths.map(removeUploadedObject));
         createdCardId = null; uploadedPaths.length = 0;
         throw imageRowError;
+      }
+
+      // Pricing metadata is fail-open: persist separately so a missing column
+      // or pricing issue can never undo a saved card.
+      if (priceEstimate) {
+        try {
+          const priceRecord = { ...priceEstimate, saved_at: new Date().toISOString() };
+          await supabase.from("cards").update({ price_estimate_json: priceRecord }).eq("id", card.id).eq("owner_id", userData.user.id);
+        } catch { /* Card save remains successful even if pricing metadata cannot be stored. */ }
       }
 
       // Intelligence archiving is deliberately fail-open: a training-log problem must never undo a saved card.
@@ -491,7 +578,7 @@ export default function AddCardClient({ initialCollectionId }: { initialCollecti
 
         {currentStep === 3 && <Panel className="space-y-6 p-5 md:p-7"><div><p className="eyebrow">Collection</p><h3 className="heading-2 mt-2">Place in the vault</h3><p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">Choose its exhibition, or create a new collection without leaving this record.</p></div><CollectionSelector collections={collections} selectedId={selectedCollectionId} onSelect={setSelectedCollectionId} onCreate={() => setQuickCreateOpen(true)} loading={collectionsLoading} disabled={saving} error={collectionError}/></Panel>}
 
-        {currentStep === 4 && <><CardFields value={form} onChange={setForm} disabled={saving} sections={["value"]}/>{estimateSource && <Message tone="success">{estimateSource}. Closest sale estimate, not appraisal.</Message>}<div className="grid gap-4 sm:grid-cols-2"><Panel className="p-5"><p className="eyebrow">Market estimate</p><h3 className="heading-3 mt-2">Editable indicator</h3><p className="mt-2 text-sm leading-6 text-[var(--text-tertiary)]">A verified closest sale may suggest a value. You remain in control of the saved estimate.</p></Panel><RecentSalesPanel data={sales} loading={salesLoading} error={salesError}/></div></>}
+        {currentStep === 4 && <><CardFields value={form} onChange={setForm} disabled={saving} sections={["value"]}/>{estimateSource && <Message tone="success">{estimateSource}</Message>}<PriceEstimatePanel data={priceEstimate} loading={priceLoading} error={priceError} isGraded={isGradedGrader(form.grader)} onRefresh={() => void runPriceEstimate(formToPricingCard(form))} onUseEstimate={(value) => applyFairEstimate(value, priceEstimate?.confidence || "medium", true)}/><div className="grid gap-4 sm:grid-cols-2"><Panel className="p-5"><p className="eyebrow">Market estimate</p><h3 className="heading-3 mt-2">Editable indicator</h3><p className="mt-2 text-sm leading-6 text-[var(--text-tertiary)]">The fair AI estimate is applied by default. You remain in control of the saved value.</p></Panel><RecentSalesPanel data={sales} loading={salesLoading} error={salesError}/></div></>}
 
         {currentStep === 5 && <><Panel className="space-y-6 p-5 md:p-7"><div><p className="eyebrow">Review & save</p><h3 className="heading-2 mt-2">Ready for the vault</h3><p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">Review the catalogue record before saving this card.</p></div>{frontPreview && <div className="mx-auto w-full max-w-xs lg:hidden"><FlippableCard frontImageUrl={frontPreview} backImageUrl={backPreview} alt={form.playerName || "Card review"}/></div>}<dl className="divide-y divide-[var(--border-subtle)] rounded-xl border border-[var(--border-subtle)] px-4">{[["Card", form.playerName || "Not entered"], ["Identity", [form.year, form.brand, form.setName, form.cardNumber && `#${form.cardNumber}`, form.parallel].filter(Boolean).join(" · ") || "No additional details"], ["Condition", form.grader === "Raw" ? (form.condition || "Raw") : `${form.grader} ${form.grade}`], ["Collection", selectedCollection?.name || "Unsorted"], ["Estimated value", displayValue ? `$${Number(displayValue).toLocaleString()}` : "Not entered"], ["Status", form.status.replaceAll("_", " ")]].map(([label, value]) => <div key={label} className="grid grid-cols-[7rem_1fr] gap-4 py-4"><dt className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-tertiary)]">{label}</dt><dd className="text-sm font-medium capitalize text-[var(--text-primary)]">{value}</dd></div>)}</dl></Panel>{frontPreview && <DisplayImagePanel originalUrl={frontPreview} lookup={imageLookup} selected={selectedDisplayImage} onSelect={setSelectedDisplayImage}/>}</>}
 

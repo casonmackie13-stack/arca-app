@@ -1,4 +1,5 @@
 import type { CardAutofillResponse, CardImageLookupResponse, CardSalesResponse } from "@/lib/card-intelligence";
+import type { PriceEstimateResponse, PricingCardInput } from "@/lib/pricing/types";
 import { createMobileSafeId } from "@/lib/mobile-id";
 import { supabase } from "@/lib/supabase";
 
@@ -72,4 +73,13 @@ export async function lookupDisplayImage(card: Record<string, unknown>): Promise
   const token = await sessionToken();
   const response = await fetch("/api/card-image-lookup", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ card }) });
   const payload = await response.json(); if (!response.ok) throw new Error(payload.error || "Better image lookup is unavailable."); return payload;
+}
+
+/** Additive, post-autofill AI price estimation. Never affects card autofill. */
+export async function estimateCardPrice(card: PricingCardInput): Promise<PriceEstimateResponse> {
+  const token = await sessionToken();
+  const response = await fetch("/api/card-pricing/estimate", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ card }) });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || "Price estimate is unavailable.");
+  return payload as PriceEstimateResponse;
 }
