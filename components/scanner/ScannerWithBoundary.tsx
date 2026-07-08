@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import ScannerErrorBoundary from "@/components/scanner/ScannerErrorBoundary";
 import type { GuidedCaptureResult, ScanSequence } from "@/lib/scanner/scannerTypes";
 
-const Scanner = dynamic(() => import("@/components/scanner/Scanner"), {
+const Scanner = dynamic(() => import("@/components/scanner/SimpleScanner"), {
   ssr: false,
   loading: () => null,
 });

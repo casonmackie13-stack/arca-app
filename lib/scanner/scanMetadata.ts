@@ -42,7 +42,7 @@ export type ScanMetadata = {
   edgeDetected: boolean;
   perspectiveCorrected: boolean;
   fallbackCrop?: boolean;
-  crop_method?: "opencv_corners" | "guide_fallback" | "native_full" | "failed";
+  crop_method?: "opencv_corners" | "guide_fallback" | "native_full" | "failed" | "manual_corners";
   crop_fallback_reason?: string;
   captured_frame_corners?: Point[];
   live_corners_ignored?: boolean;
